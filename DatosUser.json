@@ -1,20 +1,4 @@
 {
     "usuarios": {
-        "Fabricio": {
-            "name": "Fabricio",
-            "email": "fabriga1509@gmail.com",
-            "salt": "6c627ae1feb9e10b8db3c4d16da74630",
-            "hash_password": "205103c2aaa24a704a2217b1b3e212aafd37bf3cb799867b6d4eaf74c4a6757e",
-            "record": 0,
-            "verificado": true
-        },
-        "Nymeria": {
-            "name": "Nymeria",
-            "email": "praps1509@gmail.com",
-            "salt": "33ffffd919fca28795e138da0ecbd34c",
-            "hash_password": "5a3cbc8b448af4c60eb7f89d3e33c9bee1bc2b6a8606c026b265394d26adb261",
-            "record": 0,
-            "verificado": false
-        }
     }
 }
