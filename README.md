@@ -346,6 +346,17 @@ python -m unittest discover -s tests -v
 
 Las pruebas usan una base SQLite temporal y sustituyen el envío SMTP, por lo que no mandan correos reales. `.github/workflows/ci.yml` ejecuta las pruebas y construye la imagen Docker al subir cambios o abrir un pull request hacia `main`.
 
+## Generar la documentación con Doxygen
+
+El archivo `Doxyfile` está configurado para documentar el código Python de la interfaz, el cliente, el servidor, el backend y las pruebas. Para generarla en Linux Mint:
+
+```bash
+sudo apt install doxygen
+doxygen Doxyfile
+```
+
+Abre `html/index.html` en el navegador para consultar la documentación. Los archivos generados se guardan en `html/` y están excluidos de Git.
+
 ## DoD y límites deliberados del alcance
 
 La documentación del modelo, persistencia, pruebas positivas/negativas de cuenta y CI cubren los aspectos del DoD pertinentes a US-01–US-05. El DoD general del documento también incluye hardware físico, arena, dos avatares en juego y sincronización multijugador. No se implementan aquí porque pertenecen a funcionalidades posteriores y exceden el límite solicitado de US-01 a US-05; por tanto, esta entrega no afirma que el DoD global del videojuego esté completo.
