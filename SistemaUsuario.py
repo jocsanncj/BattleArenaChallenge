@@ -1,195 +1,145 @@
-import smtplib
 import json
-import secrets
-import hashlib
-import getpass
 import os
-import hmac
-from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
-from usuario import Usuario
-load_dotenv(Path(__file__).resolve().parent / ".env")
-ARCHIVO_USUARIOS = Path(__file__).resolve().parent / "DatosUser.json"
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-def enviar_correo_smtp(correo_destino: str):
-    remitente = "proyectomodelado4@gmail.com"
-    password_aplicacion = os.getenv("GMAIL_APP_PASSWORD")
-    if not password_aplicacion:
-        print("Configura GMAIL_APP_PASSWORD en el archivo .env del proyecto.")
-        return False
-    msg = MIMEMultipart()
-    msg['From'] = remitente
-    msg['To'] = correo_destino
-    msg['Subject'] = "Código de Verificación"
-    codigo = f"{secrets.randbelow(1_000_000):06}"
-    cuerpo = f"Hola, tu código de verificación es: {codigo}"
-    msg.attach(MIMEText(cuerpo, 'plain'))
-    etapa = "conectando por SMTP seguro"
+
+URL_SERVIDOR = os.getenv(
+    "BATTLE_ARENA_SERVER", "http://127.0.0.1:8000"
+).rstrip("/")
+_token: str | None = None
+_usuario_actual: str | None = None
+
+
+class CredencialesInvalidas(RuntimeError):
+    pass
+
+
+class CorreoPendiente(RuntimeError):
+    pass
+
+
+def _solicitud(
+    ruta: str,
+    contenido: dict[str, object] | None = None,
+    requiere_sesion: bool = False,
+) -> dict[str, object]:
+    datos = None
+    headers = {"Accept": "application/json"}
+    if contenido is not None:
+        datos = json.dumps(contenido).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    if requiere_sesion:
+        if _token is None:
+            raise RuntimeError("Inicia sesión para consultar esta información.")
+        headers["Authorization"] = f"Bearer {_token}"
+
+    solicitud = Request(
+        f"{URL_SERVIDOR}{ruta}",
+        data=datos,
+        headers=headers,
+        method="POST" if datos is not None else "GET",
+    )
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
-            etapa = "autenticando la cuenta de Gmail"
-            server.login(remitente, password_aplicacion)
-            etapa = "enviando el correo"
-            server.send_message(msg)
-            etapa = "cerrando la conexión SMTP"
-    except (smtplib.SMTPException, OSError) as e:
-        print(f"Error al {etapa} ({type(e).__name__}): {e}")
-        return False
-    print(f"Correo enviado con éxito a {correo_destino}")
-    while True:
-        verificacion = input("Escribe el código que se envió: ").strip()
-        if verificacion == codigo:
-            return True
-        print("Código incorrecto. Inténtalo de nuevo.")
+        with urlopen(solicitud, timeout=10) as respuesta:
+            resultado = json.loads(respuesta.read().decode("utf-8"))
+    except HTTPError as error:
+        try:
+            detalle = json.loads(error.read().decode("utf-8"))
+            mensaje = detalle.get("error", f"Error HTTP {error.code}.")
+            if ruta == "/api/login" and error.code == 403:
+                raise CorreoPendiente(str(mensaje)) from error
+            if ruta == "/api/login" and error.code == 401:
+                raise CredencialesInvalidas(str(mensaje)) from error
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            mensaje = f"Error HTTP {error.code} al comunicarse con el servidor."
+        raise RuntimeError(str(mensaje)) from error
+    except (URLError, TimeoutError, OSError) as error:
+        raise RuntimeError(
+            f"No se pudo conectar con el servidor {URL_SERVIDOR}: {error}"
+        ) from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("El servidor respondió con datos inválidos.") from error
 
-def creacion_usuario():
-    print("Bienvenido :D")
-    while True:
-        eleccion = int(input("Elige 1 para crear usuario o 2 para iniciar sesión: ").strip())
-        if eleccion == 1:
-            try:
-                with open(ARCHIVO_USUARIOS, "r", encoding="utf-8") as archivo:
-                    datos = json.load(archivo)
-            except FileNotFoundError:
-                datos = {"usuarios": {}}
-            usuarios = datos.setdefault("usuarios", {})
-            while True:
-                nombre_user = input("Escribe tu nombre dentro del juego: ").strip()
-                if not nombre_user:
-                    print("El nombre no puede estar vacío.")
-                    continue
-                if nombre_user in usuarios:
-                    print("Ese nombre ya existe. Elige otro.")
-                    continue
-                break
-            while True:
-                password = getpass.getpass("Escribe tu contraseña: ")
-                confirmacion = getpass.getpass("Confirma tu contraseña: ")
-                if password == confirmacion:
-                    break
-                print("Las contraseñas no coinciden. Inténtalo de nuevo.")
-            salt = secrets.token_bytes(16)
-            hash_password = hashlib.pbkdf2_hmac(
-                "sha256",
-                password.encode("utf-8"),
-                salt,
-                600_000,
-            ).hex()
-            while True:
-                correo_user = input("Escribe tu correo electrónico: ").strip()
-                if not correo_user:
-                    print("El correo no puede estar vacío.")
-                    continue
-                correo_normalizado = correo_user.casefold()
-                correo_existe = any(
-                    isinstance(registro, dict)
-                    and isinstance(registro.get("email"), str)
-                    and registro["email"].strip().casefold() == correo_normalizado
-                    for registro in usuarios.values()
-                )
-                if correo_existe:
-                    print("Ese correo ya está registrado. Escribe otro.")
-                    continue
-                break
-            usuario = Usuario(nombre_user, salt.hex(), hash_password, correo_user)
-            usuarios[usuario.name] = usuario.como_diccionario()
-            with open(ARCHIVO_USUARIOS, "w", encoding="utf-8") as archivo:
-                json.dump(datos, archivo, ensure_ascii=False, indent=4)
-            print(f"Usuario {usuario.name} creado.")
-            print("Para jugar debes verificar el correo")
-            while True:
-                ver_correo = input("¿Quieres verificarlo ahora? Escribe S o N: ").strip().upper()
-                if ver_correo in ("S", "N"):
-                    break
-                print("Respuesta inválida. Escribe S o N.")
-            if ver_correo == "S":
-                if enviar_correo_smtp(usuario.email):
-                    usuario.verificacion()
-                    usuarios[usuario.name] = usuario.como_diccionario()
-                    with open(ARCHIVO_USUARIOS, "w", encoding="utf-8") as archivo:
-                        json.dump(datos, archivo, ensure_ascii=False, indent=4)
-                    print("Correo verificado.")
-                else:
-                    print("No se pudo verificar el correo.")
-            break
-        elif eleccion == 2:
-            inicio_sesion()
-            return
-        else:
-            print("Número incorrecto")
-            continue
+    if not isinstance(resultado, dict):
+        raise RuntimeError("El servidor respondió con un formato inválido.")
+    return resultado
 
-def inicio_sesion():
+
+def _guardar_sesion(respuesta: dict[str, object]) -> None:
+    global _token, _usuario_actual
+    token = respuesta.get("token")
+    usuario = respuesta.get("user")
+    if not isinstance(token, str) or not isinstance(usuario, dict):
+        raise RuntimeError("El servidor no devolvió una sesión válida.")
+    nombre = usuario.get("name")
+    if not isinstance(nombre, str):
+        raise RuntimeError("El servidor devolvió un perfil inválido.")
+    _token = token
+    _usuario_actual = nombre
+
+
+def registrar_usuario(
+    nombre: str,
+    password: str,
+    confirmacion: str,
+    correo: str,
+) -> dict[str, object]:
+    return _solicitud(
+        "/api/register",
+        {
+            "name": nombre,
+            "email": correo,
+            "password": password,
+            "password_confirmation": confirmacion,
+        },
+    )
+
+
+def autenticar_usuario(
+    identificador: str, password: str
+) -> dict[str, object] | None:
     try:
-        with open(ARCHIVO_USUARIOS, "r", encoding="utf-8") as archivo:
-            datos = json.load(archivo)
-    except FileNotFoundError:
-        print("Todavía no hay usuarios registrados.")
-        return
-    usuarios = datos.get("usuarios", {})
-    while True:
-        nombre_login = input(
-            "Escribe tu nombre de usuario (o deja vacío para volver): "
-        ).strip()
-        if not nombre_login:
-            return
-        registro = usuarios.get(nombre_login)
-        if isinstance(registro, dict):
-            break
-        print("Usuario no encontrado. Inténtalo de nuevo.")
-    while True:
-        contador = 0
-        while contador < 3:
-            password = getpass.getpass("Escribe la contraseña: ")
-            salt = bytes.fromhex(registro["salt"])
-            hash_ingresado = hashlib.pbkdf2_hmac(
-                "sha256",
-                password.encode("utf-8"),
-                salt,
-                600_000,
-            ).hex()
-            if hmac.compare_digest(hash_ingresado, registro["hash_password"]):
-                print("Inicio de sesión correcto.")
-                return
-            contador += 1
-            print(f"Contraseña incorrecta. Intentos: {contador}/3")
-        while True:
-            eleccion_password = input(
-                "¿Quieres recuperar tu contraseña por correo? Escribe S o N: "
-            ).strip().upper()
-            if eleccion_password in ("S", "N"):
-                break
-            print("Opción inválida. Escribe S o N.")
-        if eleccion_password == "N":
-            print("Puedes volver a intentar la contraseña.")
-            continue
-        correo = registro.get("email")
-        if not isinstance(correo, str) or not correo:
-            print("La cuenta no tiene un correo válido para recuperación.")
-            return
-        if not enviar_correo_smtp(correo):
-            print("No se pudo verificar el correo; la contraseña no fue modificada.")
-            return
-        while True:
-            nueva_password = getpass.getpass("Escribe la nueva contraseña: ")
-            confirmacion = getpass.getpass("Confirma la nueva contraseña: ")
-            if nueva_password == confirmacion:
-                break
-            print("Las contraseñas no coinciden. Inténtalo de nuevo.")
-        nuevo_salt = secrets.token_bytes(16)
-        nuevo_hash = hashlib.pbkdf2_hmac(
-            "sha256",
-            nueva_password.encode("utf-8"),
-            nuevo_salt,
-            600_000,
-        ).hex()
-        registro["salt"] = nuevo_salt.hex()
-        registro["hash_password"] = nuevo_hash
-        with open(ARCHIVO_USUARIOS, "w", encoding="utf-8") as archivo:
-            json.dump(datos, archivo, ensure_ascii=False, indent=4)
-        print("Contraseña restablecida. Ya puedes iniciar sesión con la nueva contraseña.")
+        respuesta = _solicitud(
+            "/api/login",
+            {"identifier": identificador, "password": password},
+        )
+    except CredencialesInvalidas:
+        return None
+    _guardar_sesion(respuesta)
+    usuario = respuesta.get("user")
+    if not isinstance(usuario, dict):
+        raise RuntimeError("El servidor devolvió un perfil inválido.")
+    return usuario
 
-if __name__ == "__main__":
-    creacion_usuario()
+
+def obtener_usuario() -> dict[str, object]:
+    respuesta = _solicitud("/api/profile", requiere_sesion=True)
+    usuario = respuesta.get("user")
+    if not isinstance(usuario, dict):
+        raise RuntimeError("El servidor devolvió un perfil inválido.")
+    return usuario
+
+
+def reenviar_verificacion(identificador: str) -> None:
+    _solicitud(
+        "/api/email/resend",
+        {"identifier": identificador},
+    )
+
+
+def solicitar_recuperacion(identificador: str) -> None:
+    _solicitud(
+        "/api/password/recovery",
+        {"identifier": identificador},
+    )
+
+
+def cerrar_sesion() -> None:
+    global _token, _usuario_actual
+    _token = None
+    _usuario_actual = None
+
+
+def usuario_actual() -> str | None:
+    return _usuario_actual
