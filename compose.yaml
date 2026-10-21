@@ -10,15 +10,10 @@ services:
       HOST: 0.0.0.0
       PORT: 8000
       DATA_DIR: /data
-      LEGACY_USERS_FILE: /legacy/DatosUser.json
-      GMAIL_ADDRESS: ${GMAIL_ADDRESS:-}
-      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-465}
+      FIREBASE_ADMIN_CREDENTIALS: /run/secrets/firebase-admin.json
     volumes:
       - battle-arena-data:/data
-      - ./DatosUser.json:/legacy/DatosUser.json:ro
+      - ./proyecto-modelado-dee24-firebase-adminsdk-fbsvc-1806a6701a.json:/run/secrets/firebase-admin.json:ro
     healthcheck:
       test:
         - CMD

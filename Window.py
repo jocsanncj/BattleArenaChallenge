@@ -31,7 +31,6 @@ class Window:
         
         # La escena activa se asigna después de crear la ventana.
         self.current_scene = None
-
     ## @brief Asigna una escena y le proporciona acceso a esta ventana.
     ## @param scene Objeto de escena que implementa handle_event, update y draw.
     ## @return None.
@@ -41,7 +40,6 @@ class Window:
         if self.current_scene:
             # Permite que la escena consulte o controle la ventana propietaria.
             self.current_scene.window = self
-
     ## @brief Ejecuta el bucle de eventos, actualización y dibujo de Pygame.
     ## @return None.
     ## @throws KeyboardInterrupt La interrupción se propaga después de liberar Pygame.
@@ -82,7 +80,6 @@ class Window:
             self.running = False
             # Libera los recursos inicializados por Pygame.
             pygame.quit()
-
     ## @brief Solicita que el bucle de run termine en su siguiente comprobación.
     ## @return None.
     def quit(self):

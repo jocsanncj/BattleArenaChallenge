@@ -20,13 +20,11 @@ class Usuario:
         self.salt = salt
         # No asigna avatar hasta que exista esa funcionalidad.
         self.avatar = None
-
     ## @brief Marca el correo de la cuenta como verificado.
     ## @return None.
     def verificacion(self):
         # Actualiza el indicador que se usa al serializar la cuenta.
         self.verificado = True
-
     ## @brief Serializa los campos persistidos por el formato legado.
     ## @return Diccionario compatible con el almacenamiento antiguo en JSON.
     def como_diccionario(self):
@@ -39,7 +37,6 @@ class Usuario:
             "record": self.record,
             "verificado": self.verificado,
         }
-
     ## @brief Asigna una imagen de avatar al objeto legado.
     ## @param imagen Valor que representa la imagen seleccionada.
     ## @return None.
@@ -47,4 +44,3 @@ class Usuario:
         # Conserva la imagen recibida en el atributo del objeto.
         self.avatar = imagen
         return
-    

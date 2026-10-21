@@ -184,7 +184,7 @@ class MainMenuScene(BaseScene):
             self._button(460, 370, 190, "Volver al inicio", lambda: self._set_page("welcome"))
         elif self.page == "login":
             self.fields = [
-                CampoTexto("Usuario o correo electrónico", 210, max_length=254),
+                CampoTexto("Correo electrónico", 210, max_length=254),
                 CampoTexto("Contraseña", 285, oculto=True),
             ]
             self._button(250, 375, 190, "Entrar", self._iniciar_sesion)
@@ -195,7 +195,7 @@ class MainMenuScene(BaseScene):
             self._button(460, 365, 190, "Volver al inicio", lambda: self._set_page("login"))
         elif self.page == "recovery_request":
             self.fields = [
-                CampoTexto("Usuario o correo electrónico", 255, max_length=254)
+                CampoTexto("Correo electrónico", 255, max_length=254)
             ]
             self._button(250, 345, 190, "Enviar enlace", self._solicitar_recuperacion)
             self._button(460, 345, 190, "Volver", lambda: self._set_page("login"))
@@ -229,8 +229,8 @@ class MainMenuScene(BaseScene):
             self.status = str(error)
             return
 
-        # Conserva el nombre para permitir reenviar el enlace si hiciera falta.
-        self.user_name = nombre.strip()
+        # Conserva el correo para permitir reenviar la verificación de Firebase.
+        self.user_name = correo.strip()
         # Diferencia entre el alta correcta y el envío fallido del correo.
         if response.get("verification_sent") is True:
             message = (
@@ -283,7 +283,7 @@ class MainMenuScene(BaseScene):
                 self.status = "Fallaste tres veces. Puedes solicitar un enlace para recuperar tu contraseña."
             else:
                 self.status = (
-                    f"Usuario/correo o contraseña incorrectos. "
+                    f"Correo o contraseña incorrectos. "
                     f"Intento {self.failed_attempts}/3."
                 )
             return
@@ -303,7 +303,7 @@ class MainMenuScene(BaseScene):
     ## @brief Envía una solicitud de recuperación y muestra una respuesta genérica.
     ## @return None.
     def _solicitar_recuperacion(self):
-        # Lee el nombre o correo ingresado.
+        # Lee el correo ingresado.
         identifier = self.fields[0].texto.strip()
         # Pide al backend enviar un enlace, mostrando errores de red al jugador.
         try:

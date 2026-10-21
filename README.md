@@ -1,364 +1,136 @@
-# Battle Arena Challenge — alcance US-01 a US-05
+# Battle Arena Challenge
 
-Esta entrega implementa solamente las historias de cuenta US-01 a US-05 del enunciado:
+Interfaz de escritorio hecha con Pygame. Firebase Authentication administra el registro, inicio de sesión, verificación del correo y recuperación de contraseña. Un servidor pequeño en Docker verifica los tokens de Firebase y guarda los perfiles del juego en un archivo JSON.
 
-1. Registro persistente con usuario y correo únicos, validación de los campos y contraseña de al menos 8 caracteres.
-2. Verificación de correo con enlace de un solo uso y expiración de 24 horas. Una cuenta sin verificar no puede iniciar sesión.
-3. Inicio de sesión con nombre de usuario o correo y contraseña.
-4. Perfil con nombre, avatar no configurado (`null`), estado del correo, récord, estadísticas, logros, ranking e historial.
-5. Recuperación con enlace de un solo uso que permite establecer una contraseña nueva y expira en 20 minutos.
+Esta entrega todavía no implementa creación/búsqueda de partidas ni una partida multijugador.
 
-No se implementan creación/búsqueda de partidas, arena, movimiento, hardware, ranking competitivo ni mecánicas posteriores. El perfil puede mostrar estadísticas e historial guardados, pero las cuentas nuevas muestran valores vacíos porque este alcance no registra resultados de partidas.
+## Cómo se conecta cada parte
 
-## Arquitectura y responsabilidades
+```text
+Pygame (SistemaUsuario.py)
+  ├─ Firebase Auth REST: registro, inicio de sesión, verificación y recuperación
+  └─ servidor Docker (servidor.py): solicita/consulta el perfil JSON
+       ├─ Firebase Admin: verifica el token antes de aceptar el perfil
+       └─ JSONRepository: guarda el nombre, correo, récord y datos del juego
+```
 
-- **Presentación:** `main.py`, `Window.py`, `Escenas.py` y `Boton.py`. Pygame maneja pantallas y entrada del jugador.
-- **Cliente HTTP:** `SistemaUsuario.py`. Convierte acciones de la interfaz en solicitudes JSON a la API. El cliente no lee la base de datos ni valida por sí mismo la identidad.
-- **API/servidor:** `servidor.py`. Despacha las rutas HTTP, serializa respuestas y protege el perfil con un token de sesión.
-- **Servicios de aplicación:** `backend/services.py`. Implementa validaciones de registro y contraseña, autenticación, verificación y recuperación.
-- **Persistencia:** `backend/repository.py`. Encapsula SQLite y la migración opcional de `DatosUser.json`.
-- **Modelo de perfil:** `backend/models.py`. Define los datos que la API devuelve para cada jugador.
-- **Despliegue:** `Dockerfile` y `compose.yaml`. El servidor se ejecuta en el contenedor; SQLite vive en un volumen persistente.
+- **Firebase Auth** administra identidades y envía los correos de verificación y recuperación. No se usa Resend para esos correos.
+- **`SistemaUsuario.py`** llama a la API REST de Firebase desde el cliente. La API key web es una clave pública de identificación del proyecto; no es la clave Admin.
+- **`servidor.py`** ya no registra cuentas, comprueba contraseñas ni crea enlaces de correo. Solo ofrece `/health` y las operaciones de perfil.
+- **`backend/repository.py`** persiste los perfiles de juego en `/data/usuarios.json`. No guarda ni valida las contraseñas de Firebase.
+- **La clave JSON de Firebase Admin** es privada y solo se monta dentro del contenedor, en modo de solo lectura. Nunca debe incluirse en el cliente Pygame, `.env`, GitHub o la imagen Docker.
 
-## Modelo de datos
+El inicio de sesión ahora requiere **correo electrónico y contraseña**; el nombre elegido durante el registro es el nombre público del perfil. Las cuentas guardadas anteriormente en el JSON propio no se convierten automáticamente en cuentas Firebase: los jugadores deberán registrarse en Firebase de nuevo. El archivo antiguo no se elimina.
 
-La base de datos `usuarios.sqlite3` se guarda en `DATA_DIR` (en Docker, `/data`).
+## Preparar Firebase
 
-- `usuarios`: nombre único sin distinguir mayúsculas, correo único sin distinguir mayúsculas, sal y hash de contraseña, verificación, avatar y récord.
-- `enlaces`: hash del token (no el token original), usuario, propósito y vencimiento. Se usa para enlaces de verificación y recuperación; cada enlace puede utilizarse una sola vez.
-- `logros`: títulos asociados a jugadores.
-- `historial_partidas`: oponente, resultado, puntuación y fecha para las partidas históricas mostradas en el perfil.
+1. En [Firebase Console](https://console.firebase.google.com/), abre el proyecto de la clave Admin.
+2. En **Authentication > Sign-in method**, activa **Email/Password**.
+3. En **Project settings > General**, copia el valor de **Web API Key**. Es el dato público que usa el cliente.
+4. Mantén el archivo de cuenta de servicio que descargaste en la raíz del proyecto, con este nombre:
 
-Las claves foráneas mantienen logros e historial asociados a una cuenta. La API calcula estadísticas y ranking a partir de los datos persistidos. Este alcance solo consulta los registros de partidas; la lógica de juego futura deberá añadir resultados al historial.
+   ```text
+   proyecto-modelado-dee24-firebase-adminsdk-fbsvc-1806a6701a.json
+   ```
 
-## Ejecutarlo paso a paso (una sola computadora)
+   Si el nombre del archivo es diferente, ajusta el lado izquierdo de la ruta montada en `compose.yaml`. No abras, pegues ni compartas el contenido de esa clave. El archivo está excluido de Git y del contexto Docker.
+5. Crea o edita `.env` en la raíz y agrega estas variables. Si ya contiene otras claves, no las borres: añade o actualiza solo estas líneas.
 
-**No necesitas dos computadoras para empezar.** La misma computadora puede ejecutar el servidor dentro de Docker y abrir el juego Pygame como cliente. Son dos programas diferentes: deja Docker ejecutando el servidor y abre el juego desde otra terminal. Una segunda computadora solo sirve para probar que otro equipo de la misma red puede conectarse al servidor. Esta entrega no incluye partidas multijugador.
+   ```dotenv
+   FIREBASE_API_KEY=pega_aqui_la_web_api_key
+   BATTLE_ARENA_SERVER=http://127.0.0.1:8000
+   ```
 
-Los pasos siguientes son para Windows 10/11 y PowerShell. Para macOS o Linux, consulta las notas al final.
+   La API key web no es una contraseña. No agregues la clave Admin ni `RESEND_API_KEY` al cliente ni a este ejemplo. El cliente carga `.env` al iniciar.
 
-### 1. Descargar el proyecto
+## Ejecutar en Linux Mint
 
-Si ya tienes el proyecto abierto en VS Code, pasa al siguiente paso. Si no, descarga o clona el repositorio y abre la carpeta `BattleArenaChallenge` en VS Code. Comprueba que dentro de esa carpeta se vean `Dockerfile`, `compose.yaml`, `main.py` y `requirements.txt`. Los comandos de más abajo deben ejecutarse desde esa carpeta.
+Desde una terminal abierta en la carpeta del proyecto:
 
-### 2. Instalar Docker Desktop
+1. Comprueba que Docker y Compose estén instalados:
 
-1. Descarga Docker Desktop desde la [página oficial de Docker](https://www.docker.com/products/docker-desktop/).
-2. Ejecuta el instalador. En Windows, acepta la opción de usar WSL 2 si el instalador la ofrece. Si el instalador pide reiniciar, reinicia la computadora.
-3. Abre Docker Desktop desde el menú Inicio y espera a que indique que Docker está iniciado.
-4. Abre PowerShell o la terminal de VS Code y comprueba que estos comandos respondan:
-
-   ```powershell
+   ```bash
    docker --version
    docker compose version
    ```
 
-   Si Windows dice que `docker` no se reconoce, abre Docker Desktop, espera a que termine de iniciar y vuelve a abrir la terminal. Si aún falla, reinicia Windows y consulta la instalación oficial.
+   Si tu usuario necesita permisos para Docker, usa `sudo` delante de los comandos Docker.
 
-Docker Compose ya viene incluido en Docker Desktop; no hace falta instalarlo por separado.
+2. Instala las dependencias de Python del proyecto:
 
-### 3. Instalar Python para el cliente Pygame
-
-1. Instala Python 3.10 o posterior desde [python.org](https://www.python.org/downloads/). Durante la instalación en Windows, activa **Add Python to PATH** si aparece esa casilla.
-2. Abre una terminal nueva y verifica:
-
-   ```powershell
-   py --version
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/python -m pip install -r requirements.txt
    ```
 
-   Debe mostrar Python 3.10 o una versión posterior. Si `py` no existe, intenta `python --version`.
-3. En VS Code, abre **Terminal > New Terminal**. Comprueba que la terminal esté en la carpeta del proyecto. Si no, usa `cd` seguido de la ruta de la carpeta. Por ejemplo:
+3. Construye e inicia el servidor:
 
-   ```powershell
-   cd C:\Users\TuNombre\Documents\BattleArenaChallenge
+   ```bash
+   sudo docker compose up --build -d
+   sudo docker compose ps
    ```
 
-4. Instala Pygame, que es la dependencia del cliente:
+4. Comprueba el estado del servidor en el navegador, en `http://localhost:8000/health`. Debe responder `{"status": "ok"}`. Si algo falla:
 
-   ```powershell
-   py -m pip install -r requirements.txt
+   ```bash
+   sudo docker compose logs servidor
    ```
 
-   Si tu equipo usa `python` en vez de `py`, ejecuta `python -m pip install -r requirements.txt`.
+5. En otra terminal, inicia Pygame:
 
-### 4. Configurar el correo para verificar cuentas
+   ```bash
+   .venv/bin/python main.py
+   ```
 
-El servidor puede arrancar sin configurar el correo, pero **no podrás completar el registro y el inicio de sesión de una cuenta nueva**: las cuentas necesitan verificar su correo y el servidor envía esa verificación por Gmail.
+   Regístrate con correo y contraseña, abre el mensaje de Firebase y pulsa el enlace de verificación. Después vuelve al programa e inicia sesión usando el correo.
 
-Para que se envíen los correos necesitas una cuenta Gmail y una **contraseña de aplicación** de Google (no es la contraseña normal de Gmail). Google requiere tener activada la verificación en dos pasos para crear una. Sigue las instrucciones oficiales de [contraseñas de aplicación de Google](https://support.google.com/accounts/answer/185833).
+6. Al terminar, cierra Pygame y detén el servidor:
 
-En VS Code, crea un archivo llamado exactamente `.env` en la carpeta del proyecto, al mismo nivel que `compose.yaml`. Puedes hacerlo con **File > New Text File**, pegar lo siguiente y guardarlo como `.env`:
+   ```bash
+   sudo docker compose down
+   ```
 
-```dotenv
-GMAIL_ADDRESS=tu-cuenta@gmail.com
-GMAIL_APP_PASSWORD=tu-contraseña-de-aplicacion
-PUBLIC_BASE_URL=http://localhost:8000
-```
+   Esto conserva `usuarios.json` en el volumen Docker. No uses `sudo docker compose down -v` salvo que quieras borrar también los datos del perfil.
 
-Reemplaza los dos primeros valores por tu dirección y contraseña de aplicación. No agregues comillas. No compartas este archivo ni publiques sus valores. Para una prueba en la misma computadora, deja `PUBLIC_BASE_URL` como `http://localhost:8000`.
+El chequeo `/health` puede responder aunque Firebase Admin todavía no esté configurado. Para guardar o consultar un perfil, el contenedor necesita encontrar el archivo de cuenta de servicio y que corresponda al mismo proyecto Firebase que la API key web.
 
-### 5. Iniciar el servidor
+## Probar desde otra computadora de la red
 
-En la terminal de VS Code, todavía desde la carpeta del proyecto, ejecuta:
-
-```powershell
-docker compose up --build -d
-```
-
-La primera vez puede tardar varios minutos porque Docker descarga la imagen base y construye el servidor. Cuando termine, confirma que está en ejecución:
-
-```powershell
-docker compose ps
-```
-
-Debe aparecer un servicio llamado `servidor`. Después abre esta dirección en el navegador:
-
-```text
-http://localhost:8000/health
-```
-
-Debe aparecer `{"status": "ok"}`. Si no aparece, mira los mensajes del servidor con:
-
-```powershell
-docker compose logs servidor
-```
-
-Deja el contenedor ejecutándose mientras uses el cliente. El primer arranque puede importar cuentas antiguas desde `DatosUser.json` a la base persistente de Docker. No borres ese archivo hasta comprobar la migración.
-
-### 6. Abrir el juego (cliente)
-
-Abre una **segunda terminal** en VS Code. No cierres ni detengas el servidor. En PowerShell, desde la carpeta del proyecto, ejecuta:
-
-```powershell
-$env:BATTLE_ARENA_SERVER = "http://127.0.0.1:8000"
-py main.py
-```
-
-Debe abrirse la ventana del juego. `127.0.0.1` significa “esta misma computadora”; por eso esta dirección sirve cuando el juego y Docker corren en el mismo equipo.
-
-En la ventana puedes crear una cuenta, abrir el enlace que llegó al correo para verificarla y luego iniciar sesión. Si el mensaje no llega, revisa la carpeta de spam y los registros del servidor (`docker compose logs servidor`). También comprueba que `.env` tenga la dirección Gmail y la contraseña de aplicación correctas; después de cambiar `.env`, reinicia el servicio:
-
-```powershell
-docker compose up -d --force-recreate
-```
-
-Si intentaste crear la cuenta antes de configurar Gmail, puede que la cuenta ya se haya guardado pero permanezca sin verificar. Después de configurar el correo y reiniciar el servidor, usa **Reenviar enlace** en la ventana del juego; no intentes registrar de nuevo el mismo nombre o correo.
-
-### 7. Apagarlo y volver a iniciarlo
-
-Cuando termines, cierra la ventana del juego. En una terminal ejecuta:
-
-```powershell
-docker compose down
-```
-
-Esto detiene el servidor pero conserva las cuentas y los perfiles. La próxima vez inicia Docker Desktop y ejecuta desde la carpeta del proyecto:
-
-```powershell
-docker compose up -d
-```
-
-No ejecutes `docker compose down -v`: la opción `-v` elimina también el volumen donde se guardan las cuentas.
-
-### Si luego quieres probar desde una segunda computadora
-
-El servidor debe seguir ejecutándose en la computadora que lo aloja. Averigua su dirección IP local ejecutando `ipconfig` en PowerShell y buscando la dirección IPv4 del adaptador conectado a tu red (a menudo empieza por `192.168.`). En el `.env` del servidor cambia la URL a esa dirección, por ejemplo:
-
-```dotenv
-PUBLIC_BASE_URL=http://192.168.1.50:8000
-```
-
-Usa la IP real de tu computadora, no la del ejemplo, y reinicia el servidor con `docker compose up -d --force-recreate`. Si Windows Firewall pregunta si permites conexiones para Docker/Python en una red privada, permite el acceso en esa red. En la segunda computadora instala Python y las dependencias del paso 3, abre una terminal en la carpeta del proyecto y ejecuta:
-
-```powershell
-$env:BATTLE_ARENA_SERVER = "http://192.168.1.50:8000"
-py main.py
-```
-
-De nuevo, sustituye la IP de ejemplo por la dirección real del servidor. Ambos equipos deben estar en la misma red local. No hace falta configurar el router para estas pruebas. El enlace de verificación del correo también debe usar la IP real para que se pueda abrir desde la otra computadora.
-
-### Instrucciones para Linux Mint
-
-Estos pasos son para Linux Mint con entorno gráfico. Puedes ejecutar servidor y juego en la misma computadora. En Linux Mint, ejecuta los comandos en la aplicación **Terminal**. Cuando un comando empiece por `sudo`, Linux te pedirá la contraseña de tu usuario; al escribirla no verás caracteres en pantalla, lo cual es normal.
-
-#### 1. Identificar la base Ubuntu de Mint
-
-Abre Terminal y ejecuta:
-
-```bash
-grep -E '^(VERSION_CODENAME|UBUNTU_CODENAME)=' /etc/os-release
-```
-
-Mint usa una base de Ubuntu. Docker necesita el nombre de esa base, que aparece en `UBUNTU_CODENAME` (por ejemplo, `noble`); no uses el nombre propio de Mint que aparece en `VERSION_CODENAME`.
-
-#### 2. Instalar Docker Engine y Docker Compose
-
-Los siguientes comandos configuran el repositorio oficial de Docker para Ubuntu y usan automáticamente `UBUNTU_CODENAME` de Linux Mint. No instales un paquete que use `VERSION_CODENAME` de Mint como suite del repositorio.
-
-```bash
-sudo apt update
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-```
-
-Añade el repositorio y actualiza la lista de paquetes:
-
-```bash
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-Components: stable
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-sudo apt update
-```
-
-Instala Docker Engine, Compose y los complementos necesarios:
-
-```bash
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
-
-Comprueba que Docker está activo y que Compose está instalado:
-
-```bash
-sudo systemctl status docker
-sudo docker run hello-world
-sudo docker compose version
-```
-
-El primer comando debe mostrar que el servicio está activo; `hello-world` debe terminar mostrando un mensaje de instalación correcta. Para salir de la vista de `systemctl status`, pulsa `q`.
-
-En los siguientes pasos usaremos `sudo docker ...`. Así no necesitas cambiar los permisos de tu usuario. Existe la opción de agregarlo al grupo `docker`, pero Docker advierte que ese grupo da permisos equivalentes a administrador/root; no es necesario para seguir esta guía.
-
-#### 3. Instalar Python y Pygame
-
-Instala Python, el soporte para crear entornos virtuales y las herramientas necesarias:
-
-```bash
-sudo apt install python3 python3-venv python3-pip
-```
-
-En Terminal, ve a la carpeta del proyecto. Una forma fácil es abrir esa carpeta en el administrador de archivos, hacer clic derecho en un espacio vacío y elegir **Open in Terminal** (el texto puede variar). Comprueba que estás en la carpeta correcta:
-
-```bash
-ls
-```
-
-Debes ver `main.py`, `requirements.txt`, `Dockerfile` y `compose.yaml`. Crea un entorno aislado e instala Pygame:
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-```
-
-#### 4. Configurar el correo
-
-El servidor puede iniciarse sin correo, pero no podrás verificar una cuenta nueva ni iniciar sesión con ella. Para probar el registro necesitas una cuenta Gmail y una contraseña de aplicación de Google (no la contraseña normal); consulta la [guía oficial de Google](https://support.google.com/accounts/answer/185833).
-
-Crea en la carpeta del proyecto un archivo llamado `.env`, al mismo nivel que `compose.yaml`, con estos valores:
-
-```dotenv
-GMAIL_ADDRESS=tu-cuenta@gmail.com
-GMAIL_APP_PASSWORD=tu-contraseña-de-aplicacion
-PUBLIC_BASE_URL=http://localhost:8000
-```
-
-Reemplaza los dos primeros valores por los tuyos, sin comillas. No compartas ni publiques `.env`.
-
-#### 5. Arrancar el servidor
-
-Desde Terminal, dentro de la carpeta del proyecto, ejecuta:
-
-```bash
-sudo docker compose up --build -d
-sudo docker compose ps
-```
-
-La primera vez puede tardar porque Docker debe descargar y construir la imagen. Comprueba el servidor en el navegador, abriendo `http://localhost:8000/health`. Debe responder `{"status": "ok"}`. Si no, mira los registros:
-
-```bash
-sudo docker compose logs servidor
-```
-
-Deja el servidor encendido mientras juegas.
-
-#### 6. Arrancar el juego
-
-Abre otra ventana de Terminal en la carpeta del proyecto y ejecuta:
-
-```bash
-BATTLE_ARENA_SERVER=http://127.0.0.1:8000 .venv/bin/python main.py
-```
-
-Debe abrirse la ventana de Pygame. En Linux, `127.0.0.1` se refiere a esta misma computadora. Usa una Terminal dentro de la sesión gráfica; Pygame necesita abrir una ventana y no funcionará en una consola sin escritorio gráfico.
-
-#### 7. Apagar los programas
-
-Cierra la ventana del juego. Luego detén el servidor:
-
-```bash
-sudo docker compose down
-```
-
-Esto conserva las cuentas guardadas. No uses `sudo docker compose down -v`, porque `-v` elimina también el volumen de datos.
-
-La próxima vez, abre Docker (si no inició automáticamente) y ejecuta desde la carpeta del proyecto:
-
-```bash
-sudo docker compose up -d
-BATTLE_ARENA_SERVER=http://127.0.0.1:8000 .venv/bin/python main.py
-```
-
-#### Si el puerto 8000 ya está ocupado
-
-Si Docker informa que el puerto `8000` ya está en uso, otro programa está usando ese puerto. Cierra ese programa antes de volver a iniciar el servidor. Para detener un contenedor de este proyecto usa `sudo docker compose down`.
-
-#### Si más adelante conectas otra computadora
-
-Ambos equipos deben estar conectados a la misma red local. En la computadora servidor averigua su IP con:
+El servidor Docker corre en una computadora y Pygame puede ejecutarse en esa y en otra computadora. En la computadora servidor, obtén su dirección local con:
 
 ```bash
 hostname -I
 ```
 
-Usa la dirección local que corresponda a tu red (por ejemplo, `192.168.1.50`). En `.env`, cambia `PUBLIC_BASE_URL` por `http://IP_DEL_SERVIDOR:8000`, reinicia con `sudo docker compose up -d --force-recreate` y permite el puerto 8000 en el firewall si está activo. En la segunda computadora instala Python, crea el entorno virtual e instala Pygame como arriba; luego abre el juego con:
+En `.env` de cada cliente, cambia `BATTLE_ARENA_SERVER` por la IP local del servidor, por ejemplo:
 
-```bash
-BATTLE_ARENA_SERVER=http://IP_DEL_SERVIDOR:8000 .venv/bin/python main.py
+```dotenv
+BATTLE_ARENA_SERVER=http://192.168.1.50:8000
 ```
 
-Reemplaza `IP_DEL_SERVIDOR` por la IP real en ambos lugares. Para abrir el enlace de verificación desde el otro equipo, también debe usarse esa IP en `PUBLIC_BASE_URL`. No hace falta una segunda computadora para la prueba local, y esta entrega no implementa partidas multijugador.
-
-Para otros derivados de Ubuntu o Debian, consulta las [instrucciones oficiales de Docker Engine](https://docs.docker.com/engine/install/). Para macOS, instala [Docker Desktop](https://www.docker.com/products/docker-desktop/); en Terminal instala Python 3 y usa `python3 -m pip install -r requirements.txt`, inicia el servidor con Docker Compose y ejecuta `BATTLE_ARENA_SERVER=http://127.0.0.1:8000 python3 main.py`.
-
-## Pruebas y CI
-
-Ejecuta las pruebas de US-01 a US-05 desde la raíz:
+Recrea el contenedor si cambiaste su configuración:
 
 ```bash
-python -m unittest discover -s tests -v
+sudo docker compose up -d --force-recreate
 ```
 
-Las pruebas usan una base SQLite temporal y sustituyen el envío SMTP, por lo que no mandan correos reales. `.github/workflows/ci.yml` ejecuta las pruebas y construye la imagen Docker al subir cambios o abrir un pull request hacia `main`.
+Permite el puerto 8000 en el firewall si está activo. Firebase Auth requiere Internet. Aunque las cuentas y perfiles se comparten, este proyecto todavía no coordina partidas entre jugadores.
 
-## Generar la documentación con Doxygen
+## Pruebas
 
-El archivo `Doxyfile` está configurado para documentar el código Python de la interfaz, el cliente, el servidor, el backend y las pruebas. Para generarla en Linux Mint:
+Las pruebas no acceden a Firebase ni envían correos reales; simulan las respuestas externas:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+## Documentación Doxygen
+
+El archivo `Doxyfile` documenta el cliente, la interfaz, el servidor, el backend y las pruebas. En Linux Mint:
 
 ```bash
 sudo apt install doxygen
 doxygen Doxyfile
 ```
 
-Abre `html/index.html` en el navegador para consultar la documentación. Los archivos generados se guardan en `html/` y están excluidos de Git.
-
-## DoD y límites deliberados del alcance
-
-La documentación del modelo, persistencia, pruebas positivas/negativas de cuenta y CI cubren los aspectos del DoD pertinentes a US-01–US-05. El DoD general del documento también incluye hardware físico, arena, dos avatares en juego y sincronización multijugador. No se implementan aquí porque pertenecen a funcionalidades posteriores y exceden el límite solicitado de US-01 a US-05; por tanto, esta entrega no afirma que el DoD global del videojuego esté completo.
-
-El servidor de ejemplo usa HTTP sin cifrar y sesiones en memoria. Está destinado a pruebas en una red local de confianza, no a exponerlo a Internet. Un reinicio del contenedor invalida las sesiones activas, pero conserva cuentas, enlaces y datos de perfil.
+Abre `html/index.html` en el navegador. La carpeta `html/` está excluida de Git.

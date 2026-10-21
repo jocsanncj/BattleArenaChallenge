@@ -1,598 +1,315 @@
-import hashlib
+"""Pruebas del cliente Firebase Auth y del perfil JSON protegido."""
+
 import json
 import os
-import secrets
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from unittest.mock import patch
 
 import SistemaUsuario
-from backend.repository import SQLiteRepository
-from backend.services import AccountService, EmailService
+from backend.repository import JSONRepository
 from servidor import create_server
 
 
-## @brief Pruebas de aceptación para registro, correo, login y perfil.
-class UserStories01To05Tests(unittest.TestCase):
-    ## @brief Prepara servidor HTTP local, SQLite temporal y correo simulado.
-    ## Cada prueba usa una instalación aislada para no compartir usuarios.
+## @brief Pruebas unitarias del cliente Firebase Auth sin conexión externa.
+class FirebaseClientTests(unittest.TestCase):
+    """Comprueba el flujo de cuenta sin contactar servicios de Google."""
+
+    ## @brief Limpia estado local antes de cada prueba.
     def setUp(self):
-        # Crea una carpeta temporal para guardar la base SQLite de la prueba.
+        SistemaUsuario.cerrar_sesion()
+
+    ## @brief Borra los tokens guardados después de cada prueba.
+    def tearDown(self):
+        SistemaUsuario.cerrar_sesion()
+
+    ## @brief Comprueba registro Firebase, verificación y perfil JSON.
+    def test_registration_creates_firebase_user_and_game_profile(self):
+        firebase_responses = [
+            {
+                "idToken": "signup-id-token",
+                "refreshToken": "signup-refresh-token",
+                "email": "player@example.com",
+            },
+            {
+                "idToken": "updated-id-token",
+                "refreshToken": "updated-refresh-token",
+            },
+            {},
+        ]
+        profile = {"name": "player", "email": "player@example.com"}
+        with (
+            patch.object(
+                SistemaUsuario,
+                "_firebase_request",
+                side_effect=firebase_responses,
+            ) as firebase_request,
+            patch.object(
+                SistemaUsuario, "_profile_request", return_value={"user": profile}
+            ) as profile_request,
+        ):
+            result = SistemaUsuario.registrar_usuario(
+                " player ", "valid-pass-123", "valid-pass-123", "player@example.com"
+            )
+
+        self.assertTrue(result["verification_required"])
+        self.assertTrue(result["verification_sent"])
+        self.assertEqual(firebase_request.call_args_list[0].args[0], "accounts:signUp")
+        self.assertEqual(
+            firebase_request.call_args_list[1].args[0], "accounts:update"
+        )
+        self.assertEqual(
+            firebase_request.call_args_list[2].args[1]["requestType"],
+            "VERIFY_EMAIL",
+        )
+        profile_request.assert_called_once_with("POST", {"name": "player"})
+
+    ## @brief Rechaza confirmaciones distintas antes de contactar Firebase.
+    def test_registration_rejects_mismatched_password_without_network_call(self):
+        with patch.object(SistemaUsuario, "_firebase_request") as firebase_request:
+            with self.assertRaisesRegex(ValueError, "no coinciden"):
+                SistemaUsuario.registrar_usuario(
+                    "player", "valid-pass-123", "different-pass", "player@example.com"
+                )
+        firebase_request.assert_not_called()
+
+    ## @brief Exige correo verificado y sincroniza el perfil tras el login.
+    def test_login_requires_verified_email_and_syncs_profile(self):
+        profile = {"name": "player", "email": "player@example.com"}
+        with (
+            patch.object(
+                SistemaUsuario,
+                "_firebase_request",
+                side_effect=[
+                    {
+                        "idToken": "login-id-token",
+                        "refreshToken": "login-refresh-token",
+                        "email": "player@example.com",
+                    },
+                    {
+                        "users": [
+                            {
+                                "emailVerified": True,
+                                "displayName": "player",
+                            }
+                        ]
+                    },
+                ],
+            ),
+            patch.object(
+                SistemaUsuario, "_profile_request", return_value={"user": profile}
+            ) as profile_request,
+        ):
+            authenticated = SistemaUsuario.autenticar_usuario(
+                "player@example.com", "valid-pass-123"
+            )
+
+        self.assertEqual(authenticated, profile)
+        profile_request.assert_called_once_with("POST", {"name": "player"})
+
+    ## @brief Impide iniciar el flujo de juego con correo sin verificar.
+    def test_login_blocks_unverified_email(self):
+        with patch.object(
+            SistemaUsuario,
+            "_firebase_request",
+            side_effect=[
+                {
+                    "idToken": "unverified-id-token",
+                    "refreshToken": "unverified-refresh-token",
+                    "email": "player@example.com",
+                },
+                {"users": [{"emailVerified": False, "displayName": "player"}]},
+            ],
+        ):
+            with self.assertRaises(SistemaUsuario.CorreoPendiente):
+                SistemaUsuario.autenticar_usuario(
+                    "player@example.com", "valid-pass-123"
+                )
+
+    ## @brief Traduce credenciales rechazadas al resultado usado por la interfaz.
+    def test_invalid_login_is_returned_as_none(self):
+        with patch.object(
+            SistemaUsuario,
+            "_firebase_request",
+            side_effect=SistemaUsuario.CredencialesInvalidas("wrong password"),
+        ):
+            self.assertIsNone(
+                SistemaUsuario.autenticar_usuario(
+                    "player@example.com", "incorrect"
+                )
+            )
+
+    ## @brief Mantiene respuesta genérica para un correo inexistente.
+    def test_password_recovery_does_not_disclose_missing_email(self):
+        with patch.object(
+            SistemaUsuario,
+            "_firebase_request",
+            side_effect=SistemaUsuario.FirebaseAPIError("EMAIL_NOT_FOUND"),
+        ):
+            SistemaUsuario.solicitar_recuperacion("unknown@example.com")
+
+
+## @brief Pruebas HTTP del servidor de perfiles con verificación Firebase simulada.
+class FirebaseProfileServerTests(unittest.TestCase):
+    """Comprueba que el servidor valida identidad y persiste solo datos de juego."""
+
+    ## @brief Prepara un servidor HTTP y JSON aislados para cada caso.
+    def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        # Redirige el almacenamiento, JSON legado y URL pública al entorno de test.
         self.environment = patch.dict(
             os.environ,
             {
                 "DATA_DIR": self.temp_dir.name,
-                "LEGACY_USERS_FILE": os.path.join(self.temp_dir.name, "missing.json"),
-                "PUBLIC_BASE_URL": "http://127.0.0.1",
+                "LEGACY_USERS_FILE": "",
+                "FIREBASE_ADMIN_CREDENTIALS": "",
             },
         )
-        # Activa las variables aisladas antes de construir la aplicación.
         self.environment.start()
-        # Crea un servidor HTTP en un puerto libre de la máquina.
         self.server = create_server("127.0.0.1", 0)
-        self.server.app.accounts.email_service.public_base_url = (
-            f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.verify_patcher = patch.object(
+            self.server.app, "verify_firebase_id_token"
         )
-        # Sustituye SMTP para capturar tokens sin enviar correos reales.
-        self.email_mock_patcher = patch.object(
-            self.server.app.accounts.email_service, "send_link"
+        self.verify_token = self.verify_patcher.start()
+        self.thread = threading.Thread(
+            target=self.server.serve_forever, daemon=True
         )
-        self.email_mock = self.email_mock_patcher.start()
-        # Atiende solicitudes en segundo plano durante las pruebas.
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         host, port = self.server.server_address
         self.base_url = f"http://{host}:{port}"
-        # Apunta el adaptador de la interfaz al servidor local temporal.
-        self.url_patcher = patch.object(
-            SistemaUsuario, "URL_SERVIDOR", self.base_url
-        )
-        self.url_patcher.start()
-        # Evita que una sesión anterior contamine los casos de autenticación.
-        SistemaUsuario.cerrar_sesion()
 
-    ## @brief Apaga el servidor y revierte los recursos temporales de setUp.
-    ## @return None.
+    ## @brief Detiene el servidor y limpia los recursos temporales del caso.
     def tearDown(self):
-        # Deja de aceptar peticiones y espera el fin del hilo de servidor.
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
-        # Limpia la sesión del cliente y desactiva los parches de prueba.
-        SistemaUsuario.cerrar_sesion()
-        self.url_patcher.stop()
-        self.email_mock_patcher.stop()
+        self.verify_patcher.stop()
         self.environment.stop()
-        # Borra la base temporal una vez terminadas las comprobaciones.
         self.temp_dir.cleanup()
 
-    ## @brief Envía una petición HTTP de prueba y decodifica su respuesta.
-    ## @param path Ruta relativa solicitada.
-    ## @param payload Datos JSON o campos de formulario.
-    ## @param token Token opcional para rutas protegidas.
-    ## @param form True cuando el cuerpo utiliza formulario URL-encoded.
-    ## @return Código HTTP y contenido de respuesta parseado.
-    def request(self, path, payload=None, token=None, form=False):
-        # Indica que se prefieren respuestas JSON.
+    ## @brief Envía una solicitud HTTP JSON al servidor de prueba.
+    ## @param path Ruta HTTP solicitada.
+    ## @param method Método HTTP.
+    ## @param payload Objeto JSON opcional.
+    ## @param token Token Bearer opcional.
+    ## @return Estado HTTP y diccionario JSON de respuesta.
+    def request(self, path, method="GET", payload=None, token=None):
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"Accept": "application/json"}
-        body = None
-        # Serializa los datos con el formato apropiado para el endpoint.
-        if payload is not None:
-            if form:
-                body = urlencode(payload).encode("utf-8")
-                headers["Content-Type"] = "application/x-www-form-urlencoded"
-            else:
-                body = json.dumps(payload).encode("utf-8")
-                headers["Content-Type"] = "application/json"
-        if token:
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        if token is not None:
             headers["Authorization"] = f"Bearer {token}"
-        # Construye el objeto de solicitud con POST cuando existe cuerpo.
         request = Request(
             f"{self.base_url}{path}",
             data=body,
             headers=headers,
-            method="POST" if body is not None else "GET",
+            method=method,
         )
-        # Decodifica la respuesta normal o el cuerpo de error HTTP.
         try:
             with urlopen(request, timeout=5) as response:
-                content_type = response.headers.get("Content-Type", "")
-                raw = response.read().decode("utf-8")
-                content = json.loads(raw) if "json" in content_type else raw
-                return response.status, content
+                return response.status, json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
-            raw = error.read().decode("utf-8")
-            content_type = error.headers.get("Content-Type", "")
-            content = json.loads(raw) if "json" in content_type else raw
-            return error.code, content
+            return error.code, json.loads(error.read().decode("utf-8"))
 
-    ## @brief Envía una cuenta de prueba con valores predeterminados.
-    ## @param name Nombre de usuario de la cuenta.
-    ## @param email Correo opcional; se deriva del nombre si no se proporciona.
-    ## @param password Contraseña válida por omisión en las pruebas.
-    ## @return Estado HTTP y contenido JSON devueltos por el servidor.
+    ## @brief Confirma que el endpoint de salud no requiere iniciar sesión.
+    def test_health_does_not_require_firebase_credentials(self):
+        status, response = self.request("/health")
+        self.assertEqual(status, 200)
+        self.assertEqual(response, {"status": "ok"})
 
-    def register(self, name="player", email=None, password="valid-pass-123"):
-        ## @brief Envía un registro de prueba con datos predeterminados.
-        ## @param name Nombre de usuario que se registra.
-        ## @param email Correo opcional; se deriva del nombre si no se proporciona.
-        ## @param password Contraseña válida usada por omisión en las pruebas.
-        ## @return Estado HTTP y contenido JSON devueltos por el servidor.
-        return self.request(
-            "/api/register",
-            {
-                "name": name,
-                "email": email or f"{name}@example.com",
-                "password": password,
-                "password_confirmation": password,
-            },
+    ## @brief Guarda y consulta un perfil a partir de claims Firebase verificados.
+    def test_profile_is_created_from_verified_firebase_claims(self):
+        self.verify_token.return_value = {
+            "uid": "firebase-uid-1",
+            "email": "player@example.com",
+            "email_verified": True,
+        }
+        status, created = self.request(
+            "/api/profile",
+            method="POST",
+            payload={"name": "player"},
+            token="valid-token",
         )
+        self.assertEqual(status, 200)
+        self.assertEqual(created["user"]["name"], "player")
+        self.assertTrue(created["user"]["verificado"])
+        self.assertEqual(created["user"]["record"], 0)
+        self.assertIsNone(created["user"]["avatar"])
 
-    ## @brief Comprueba registro correcto, campos inválidos y duplicados.
-    ## @return None.
-    def test_us01_registers_and_reports_invalid_or_duplicate_data(self):
-        # Confirma que el registro inicial requiere activar el correo.
-        status, result = self.register()
-        self.assertEqual(status, 201)
-        self.assertTrue(result["verification_required"])
-        self.assertTrue(result["verification_sent"])
-        self.assertFalse(result["user"]["verificado"])
+        status, loaded = self.request("/api/profile", token="valid-token")
+        self.assertEqual(status, 200)
+        self.assertEqual(loaded["user"], created["user"])
 
-        # Agrupa ejemplos inválidos con el texto que debe informar cada rechazo.
-        invalid_inputs = (
-            (
-                {
-                    "name": "",
-                    "email": "player@example.com",
-                    "password": "valid-pass-123",
-                    "password_confirmation": "valid-pass-123",
-                },
-                "obligatorios",
-            ),
-            (
-                {
-                    "name": "short",
-                    "email": "short@example.com",
-                    "password": "1234567",
-                    "password_confirmation": "1234567",
-                },
-                "8",
-            ),
-            (
-                {
-                    "name": "bad-email",
-                    "email": "not-an-email",
-                    "password": "valid-pass-123",
-                    "password_confirmation": "valid-pass-123",
-                },
-                "correo",
-            ),
-            (
-                {
-                    "name": "mismatch",
-                    "email": "mismatch@example.com",
-                    "password": "valid-pass-123",
-                    "password_confirmation": "different-pass",
-                },
-                "coinciden",
-            ),
+        stored = json.loads(
+            (Path(self.temp_dir.name) / "usuarios.json").read_text(encoding="utf-8")
         )
-        # Ejecuta cada ejemplo aisladamente para identificar fallos concretos.
-        for payload, expected_message in invalid_inputs:
-            with self.subTest(payload=payload):
-                status, response = self.request("/api/register", payload)
-                self.assertEqual(status, 400)
-                self.assertIn(expected_message, response["error"])
+        self.assertIn("firebase-uid-1", stored["firebase_profiles"])
 
-        # Valida que no se repita ni el nombre ni la dirección de correo.
-        duplicate_name_status, duplicate_name = self.register(
-            email="another@example.com"
+    ## @brief Rechaza tokens ausentes, inválidos y de correos no verificados.
+    def test_profile_requires_a_valid_firebase_token(self):
+        status, response = self.request("/api/profile")
+        self.assertEqual(status, 401)
+        self.assertIn("Inicia sesión", response["error"])
+
+        self.verify_token.return_value = {
+            "uid": "firebase-uid-unverified",
+            "email": "pending@example.com",
+            "email_verified": False,
+        }
+        status, response = self.request("/api/profile", token="unverified-token")
+        self.assertEqual(status, 401)
+        self.assertIn("Verifica tu correo", response["error"])
+
+        self.verify_token.side_effect = PermissionError("token inválido")
+        status, response = self.request("/api/profile", token="invalid-token")
+        self.assertEqual(status, 401)
+        self.assertEqual(response["error"], "token inválido")
+
+    ## @brief Comprueba que las rutas de login propias ya no están disponibles.
+    def test_old_custom_auth_routes_are_removed(self):
+        status, response = self.request(
+            "/api/login", method="POST", payload={"identifier": "player"}
         )
-        self.assertEqual(duplicate_name_status, 409)
-        self.assertEqual(duplicate_name["field"], "name")
+        self.assertEqual(status, 404)
+        self.assertEqual(response["error"], "Ruta no encontrada.")
 
-        duplicate_email_status, duplicate_email = self.register(
-            name="another-player", email="player@example.com"
-        )
-        self.assertEqual(duplicate_email_status, 409)
-        self.assertEqual(duplicate_email["field"], "email")
 
-        # Comprueba que el mínimo permitido de ocho caracteres sí se acepte.
-        exact_minimum_status, _ = self.register(
-            name="eight-characters",
-            password="pass1234",
-        )
-        self.assertEqual(exact_minimum_status, 201)
+## @brief Pruebas de persistencia JSON de perfiles Firebase.
+class FirebaseProfileRepositoryTests(unittest.TestCase):
+    """Comprueba que los perfiles de Firebase quedan persistidos en JSON."""
 
-    ## @brief Comprueba que una falla SMTP no elimine la cuenta ya registrada.
-    ## @return None.
-    def test_us01_registration_reports_email_delivery_failure(self):
-        # Simula error del proveedor al intentar enviar el enlace.
-        self.email_mock.side_effect = RuntimeError("SMTP no configurado")
-        status, response = self.register()
-        self.assertEqual(status, 201)
-        self.assertFalse(response["verification_sent"])
-        self.assertIn("SMTP no configurado", response["email_error"])
-        self.assertFalse(
-            self.server.app.accounts.get_profile("player").email_verified
-        )
-
-    ## @brief Comprueba la migración de una cuenta del JSON antiguo a SQLite.
-    ## @return None.
-    def test_us01_imports_existing_json_accounts_to_persistent_database(self):
-        # Genera credenciales hasheadas compatibles con la implementación actual.
-        legacy_file = os.path.join(self.temp_dir.name, "legacy.json")
-        salt = secrets.token_bytes(16)
-        password_hash = hashlib.pbkdf2_hmac(
-            "sha256", b"legacy-password", salt, 600_000
-        ).hex()
-        # Escribe una cuenta legada con récord y correo ya verificado.
-        with open(legacy_file, "w", encoding="utf-8") as file:
-            json.dump(
-                {
-                    "usuarios": {
-                        "legacy": {
-                            "email": "legacy@example.com",
-                            "salt": salt.hex(),
-                            "hash_password": password_hash,
-                            "record": 19,
-                            "verificado": True,
-                        }
+    ## @brief Comprueba que la sección nueva se guarda en un JSON anterior.
+    def test_old_json_files_gain_firebase_profile_section_on_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old_file = Path(directory) / "usuarios.json"
+            old_file.write_text(
+                json.dumps(
+                    {
+                        "usuarios": {},
+                        "logros": {},
+                        "historial_partidas": {},
+                        "enlaces": {},
                     }
-                },
-                file,
+                ),
+                encoding="utf-8",
             )
-        # Inicializa otro repositorio apuntando al JSON de prueba.
-        repository = SQLiteRepository(
-            Path(self.temp_dir.name) / "migrated", Path(legacy_file)
-        )
-        repository.initialize()
-        service = AccountService(repository, EmailService("http://localhost"))
-
-        profile = service.authenticate("legacy@example.com", "legacy-password")
-
-        self.assertEqual(profile.name, "legacy")
-        self.assertEqual(profile.record, 19)
-        self.assertTrue(profile.email_verified)
-
-    ## @brief Comprueba la activación por enlace, uso único y tokens inválidos.
-    ## @return None.
-    def test_us02_verification_link_activates_once_and_rejects_invalid_link(self):
-        # Crea una cuenta y recupera el token capturado por el mock SMTP.
-        status, _ = self.register()
-        self.assertEqual(status, 201)
-        token = self.email_mock.call_args.args[2]
-        link = urlparse(
-            f"{self.base_url}/verify-email?token={token}"
-        )
-        self.assertIn("verify-email", link.path)
-
-        # El GET muestra la confirmación y el POST consume el enlace una vez.
-        status, page = self.request(f"/verify-email?token={token}")
-        self.assertEqual(status, 200)
-        self.assertIn("Verificar correo", page)
-
-        status, confirmation = self.request(
-            "/verify-email",
-            {"token": token},
-            form=True,
-        )
-        self.assertEqual(status, 200)
-        self.assertIn("Correo verificado", confirmation)
-
-        # Comprueba que el indicador actualizado quedó persistido.
-        profile = self.server.app.accounts.get_profile("player").to_dict()
-        self.assertTrue(profile["verificado"])
-
-        repeated_status, repeated_response = self.request(
-            "/verify-email", {"token": token}, form=True
-        )
-        self.assertEqual(repeated_status, 400)
-        self.assertIn("no es válido", repeated_response)
-
-        invalid_status, invalid_response = self.request(
-            "/verify-email", {"token": "not-a-real-token"}, form=True
-        )
-        self.assertEqual(invalid_status, 400)
-        self.assertIn("no es válido", invalid_response)
-
-    ## @brief Comprueba las URL incluidas en ambos tipos de correo.
-    ## @return None.
-    def test_email_service_builds_links_for_verification_and_recovery(self):
-        # Intercepta el envío para examinar los textos sin usar SMTP real.
-        email_service = EmailService("http://server.example:8000")
-        with patch.object(email_service, "_send") as send:
-            email_service.send_link(
-                "player@example.com", "player", "verify-token", "verificacion"
+            repository = JSONRepository(Path(directory))
+            repository.upsert_firebase_profile(
+                "firebase-uid-2",
+                "another-player",
+                "another@example.com",
+                False,
             )
-            verification_message = send.call_args.args[2]
-            email_service.send_link(
-                "player@example.com", "player", "reset-token", "recuperacion"
-            )
-            recovery_message = send.call_args.args[2]
+            profile = repository.get_firebase_profile("firebase-uid-2")
 
-        self.assertIn(
-            "http://server.example:8000/verify-email?token=verify-token",
-            verification_message,
-        )
-        self.assertIn(
-            "http://server.example:8000/reset-password?token=reset-token",
-            recovery_message,
-        )
-
-    ## @brief Comprueba que un enlace expirado no active la cuenta.
-    ## @return None.
-    def test_us02_expired_verification_link_is_rejected(self):
-        # Crea un token con una fecha de expiración pasada.
-        self.register()
-        token = "expired-verification-token"
-        self.server.app.repository.save_email_link(
-            self.server.app.accounts._token_hash(token),
-            "player",
-            "verificacion",
-            self._past(),
-        )
-        status, response = self.request(
-            "/verify-email", {"token": token}, form=True
-        )
-        self.assertEqual(status, 400)
-        self.assertIn("venció", response)
-
-    ## @brief Comprueba login por nombre/correo y bloqueo previo a verificación.
-    ## @return None.
-    def test_us03_login_accepts_username_or_email_and_blocks_unverified_users(self):
-        # La cuenta no debe autenticar hasta consumir el enlace de correo.
-        self.register()
-        status, response = self.request(
-            "/api/login",
-            {"identifier": "player", "password": "valid-pass-123"},
-        )
-        self.assertEqual(status, 403)
-        self.assertTrue(response["email_unverified"])
-
-        # Verifica el correo y luego comprueba ambos identificadores permitidos.
-        self.email_mock.reset_mock()
-        self.request("/api/email/resend", {"identifier": "player"})
-        token = self.email_mock.call_args.args[2]
-        self.request("/verify-email", {"token": token}, form=True)
-
-        for identifier in ("player", "player@example.com"):
-            with self.subTest(identifier=identifier):
-                status, response = self.request(
-                    "/api/login",
-                    {"identifier": identifier, "password": "valid-pass-123"},
-                )
-                self.assertEqual(status, 200)
-                self.assertEqual(response["user"]["name"], "player")
-                self.assertIsInstance(response["token"], str)
-
-        # Las credenciales incorrectas y el usuario inexistente se rechazan.
-        wrong_status, wrong_password = self.request(
-            "/api/login",
-            {"identifier": "player", "password": "wrong-password"},
-        )
-        self.assertEqual(wrong_status, 401)
-        self.assertIn("incorrectos", wrong_password["error"])
-
-        missing_status, missing_user = self.request(
-            "/api/login",
-            {"identifier": "unknown@example.com", "password": "valid-pass-123"},
-        )
-        self.assertEqual(missing_status, 401)
-        self.assertIn("incorrectos", missing_user["error"])
-
-    ## @brief Comprueba que perfil autenticado incluye estadísticas e historial.
-    ## @return None.
-    def test_us04_profile_includes_identity_statistics_achievements_and_history(self):
-        # Prepara una cuenta activa y una sesión mediante el flujo HTTP.
-        self.register()
-        self.email_mock.reset_mock()
-        self.request("/api/email/resend", {"identifier": "player"})
-        token_link = self.email_mock.call_args.args[2]
-        self.request("/verify-email", {"token": token_link}, form=True)
-        _, login = self.request(
-            "/api/login",
-            {"identifier": "player@example.com", "password": "valid-pass-123"},
-        )
-
-        # Inserta registros de muestra para validar agregados y orden del historial.
-        with self.server.app.repository._connection() as connection:
-            connection.execute(
-                "UPDATE usuarios SET record = 42 WHERE nombre = 'player'"
-            )
-            connection.execute(
-                "INSERT INTO logros (nombre_usuario, titulo) VALUES (?, ?)",
-                ("player", "Primera victoria"),
-            )
-            connection.execute(
-                """
-                INSERT INTO historial_partidas
-                    (nombre_usuario, oponente, resultado, puntuacion, fecha)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                ("player", "rival", "victoria", 42, "2026-10-19T12:00:00+00:00"),
-            )
-
-        # Solicita el perfil usando la sesión obtenida durante el login.
-        status, profile_response = self.request(
-            "/api/profile", token=login["token"]
-        )
-        self.assertEqual(status, 200)
-        profile = profile_response["user"]
-        self.assertEqual(profile["name"], "player")
-        self.assertIsNone(profile["avatar"])
-        self.assertTrue(profile["verificado"])
-        self.assertEqual(profile["record"], 42)
-        self.assertEqual(profile["statistics"]["matches_played"], 1)
-        self.assertEqual(profile["statistics"]["wins"], 1)
-        self.assertIn("Primera victoria", profile["achievements"])
-        self.assertEqual(profile["match_history"][0]["opponent"], "rival")
-        self.assertIsInstance(profile["ranking"], int)
-
-        # La misma ruta debe bloquear una petición sin token.
-        unauthorized_status, _ = self.request("/api/profile")
-        self.assertEqual(unauthorized_status, 401)
-
-    ## @brief Comprueba que un perfil nuevo tenga estadísticas y listas vacías.
-    ## @return None.
-    def test_us04_new_player_profile_has_empty_history(self):
-        # Crea el usuario y consulta su perfil antes de registrar partidas.
-        self.register()
-        profile = self.server.app.accounts.get_profile("player").to_dict()
-        self.assertEqual(
-            profile["statistics"],
-            {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
-        )
-        self.assertEqual(profile["achievements"], [])
-        self.assertEqual(profile["match_history"], [])
-        self.assertIsNone(profile["ranking"])
-
-    ## @brief Comprueba recuperación válida y que su enlace solo se utilice una vez.
-    ## @return None.
-    def test_us05_recovery_link_resets_password_and_expires(self):
-        # Verifica la cuenta para permitir la recuperación normal.
-        self.register()
-        self.request(
-            "/verify-email",
-            {"token": self.email_mock.call_args.args[2]},
-            form=True,
-        )
-        self.email_mock.reset_mock()
-        # Solicita el enlace, abre su formulario y envía la nueva contraseña.
-        status, response = self.request(
-            "/api/password/recovery", {"identifier": "player@example.com"}
-        )
-        self.assertEqual(status, 200)
-        self.assertIn("recibirás un enlace", response["message"])
-        token = self.email_mock.call_args.args[2]
-
-        status, page = self.request(f"/reset-password?token={token}")
-        self.assertEqual(status, 200)
-        self.assertIn("Nueva contraseña", page)
-
-        status, result = self.request(
-            "/reset-password",
-            {
-                "token": token,
-                "password": "new-password-456",
-                "confirmation": "new-password-456",
-            },
-            form=True,
-        )
-        self.assertEqual(status, 200)
-        self.assertIn("Contraseña actualizada", result)
-
-        # La contraseña antigua debe fallar y la nueva debe autenticar.
-        old_status, _ = self.request(
-            "/api/login",
-            {"identifier": "player", "password": "valid-pass-123"},
-        )
-        new_status, new_login = self.request(
-            "/api/login",
-            {"identifier": "player", "password": "new-password-456"},
-        )
-        self.assertEqual(old_status, 401)
-        self.assertEqual(new_status, 200)
-        self.assertEqual(new_login["user"]["name"], "player")
-
-        reused_status, reused_page = self.request(
-            "/reset-password",
-            {
-                "token": token,
-                "password": "another-password",
-                "confirmation": "another-password",
-            },
-            form=True,
-        )
-        self.assertEqual(reused_status, 400)
-        self.assertIn("no es válido", reused_page)
-
-    ## @brief Rechaza enlaces vencidos, tokens falsos y contraseñas cortas.
-    ## @return None.
-    def test_us05_recovery_rejects_invalid_expired_and_short_password(self):
-        # Persiste un token vencido para comprobar que el backend lo rechaza.
-        self.register()
-        expired_token = "expired-recovery-token"
-        self.server.app.repository.save_email_link(
-            self.server.app.accounts._token_hash(expired_token),
-            "player",
-            "recuperacion",
-            self._past(),
-        )
-        expired_status, _ = self.request(
-            f"/reset-password?token={expired_token}"
-        )
-        self.assertEqual(expired_status, 400)
-
-        # Un token inventado tampoco debe permitir modificar la cuenta.
-        invalid_status, invalid_page = self.request(
-            "/reset-password",
-            {
-                "token": "invalid-token",
-                "password": "new-password",
-                "confirmation": "new-password",
-            },
-            form=True,
-        )
-        self.assertEqual(invalid_status, 400)
-        self.assertIn("no es válido", invalid_page)
-
-        # Solicita un token válido y demuestra que la contraseña corta no se guarda.
-        self.email_mock.reset_mock()
-        self.request("/api/password/recovery", {"identifier": "player"})
-        token = self.email_mock.call_args.args[2]
-        short_status, short_page = self.request(
-            "/reset-password",
-            {
-                "token": token,
-                "password": "short",
-                "confirmation": "short",
-            },
-            form=True,
-        )
-        self.assertEqual(short_status, 400)
-        self.assertIn("8", short_page)
-
-    ## @brief Comprueba login, lectura de perfil y limpieza de sesión del adaptador.
-    ## @return None.
-    def test_client_adapter_logs_in_and_reads_profile(self):
-        # Prepara una cuenta verificada antes de utilizar el cliente público.
-        self.register()
-        self.email_mock.reset_mock()
-        self.request("/api/email/resend", {"identifier": "player"})
-        self.request(
-            "/verify-email",
-            {"token": self.email_mock.call_args.args[2]},
-            form=True,
-        )
-        user = SistemaUsuario.autenticar_usuario(
-            "player@example.com", "valid-pass-123"
-        )
-        self.assertEqual(user["name"], "player")
-        self.assertEqual(SistemaUsuario.obtener_usuario()["email"], "player@example.com")
-        # Comprueba que cerrar sesión impide posteriores consultas privadas.
-        SistemaUsuario.cerrar_sesion()
-        with self.assertRaises(RuntimeError):
-            SistemaUsuario.obtener_usuario()
-
-    @staticmethod
-    ## @brief Calcula una fecha UTC pasada para crear enlaces vencidos.
-    ## @return Fecha de hace un minuto.
-    def _past():
-        # Importa solo los tipos requeridos por este helper de pruebas.
-        from datetime import datetime, timedelta, timezone
-
-        return datetime.now(timezone.utc) - timedelta(minutes=1)
+            self.assertEqual(profile.name, "another-player")
+            self.assertFalse(profile.email_verified)
+            self.assertEqual(profile.record, 0)
 
 
-## @brief Ejecuta la suite directamente al iniciar este archivo.
 if __name__ == "__main__":
-    # Deja que unittest descubra y ejecute la clase de casos.
     unittest.main()

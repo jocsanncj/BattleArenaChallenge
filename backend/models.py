@@ -30,7 +30,6 @@ class PlayerProfile:
     achievements: tuple[str, ...]
     ## @brief Registros históricos serializables de las partidas.
     match_history: tuple[dict[str, object], ...]
-
     ## @brief Convierte el perfil a la estructura JSON utilizada por la API.
     ## @return Diccionario con identidad, estadísticas y datos históricos.
     def to_dict(self) -> dict[str, object]:
@@ -60,15 +59,3 @@ class PlayerProfile:
             # Convierte también el historial a una lista para serializarlo.
             "match_history": list(self.match_history),
         }
-
-
-# Representa el resultado de crear una cuenta y enviar su verificación.
-@dataclass(frozen=True)
-## @brief Resultado inmutable de registro y envío del correo de activación.
-class RegistrationResult:
-    ## @brief Perfil inicial creado para la cuenta.
-    profile: PlayerProfile
-    ## @brief Indica si el servidor logró enviar el correo de verificación.
-    verification_sent: bool
-    ## @brief Mensaje del proveedor cuando el envío del correo falló.
-    email_error: str
