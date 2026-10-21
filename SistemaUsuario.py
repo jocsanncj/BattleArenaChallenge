@@ -42,7 +42,7 @@ class FirebaseAPIError(RuntimeError):
 
 
 ## @brief Convierte un código de Firebase Auth en un mensaje para la interfaz.
-## @param code Código de error devuelto en la respuesta JSON.
+## @param code Código de error devuelto en la respuesta SQLite.
 ## @return Mensaje legible en español.
 def _mensaje_firebase(code: str) -> str:
     """Traduce códigos comunes de Firebase a mensajes para la interfaz."""
@@ -278,6 +278,9 @@ def registrar_usuario(
     if password != confirmacion:
         raise ValueError("Las contraseñas no coinciden.")
 
+    if not _publico("/api/disponible", nombre=name)["disponible"]:
+        raise ValueError("Ese nombre de usuario ya está en uso.")
+
     response = _firebase_request(
         "accounts:signUp",
         {"email": email, "password": password, "returnSecureToken": True},
@@ -305,12 +308,16 @@ def registrar_usuario(
 ## @param password Contraseña de Firebase.
 ## @return Perfil autenticado o None si Firebase rechaza las credenciales.
 ## @throws CorreoPendiente Si la cuenta aún no confirmó su correo.
-def autenticar_usuario(
-    identificador: str, password: str
-) -> dict[str, object] | None:
+def autenticar_usuario(identificador: str, password: str) -> dict[str, object] | None:
     """Inicia sesión por correo y devuelve el perfil si el correo está verificado."""
     global _nombre_actual
-    email = identificador.strip()
+    email = _resolver_correo(identificador)
+    if email is None:
+        return None
+    if "@" not in email:
+        email = _publico("/api/correo", nombre=email).get("correo")
+        if not email:
+            return None
     try:
         response = _firebase_request(
             "accounts:signInWithPassword",
@@ -367,7 +374,9 @@ def reenviar_verificacion(identificador: str) -> None:
 ## @return None.
 def solicitar_recuperacion(identificador: str) -> None:
     """Solicita a Firebase un correo para restablecer la contraseña."""
-    email = identificador.strip()
+    email = _resolver_correo(identificador)
+    if not email: 
+        return
     if not email:
         raise ValueError("Escribe tu correo electrónico.")
     try:
@@ -396,3 +405,14 @@ def cerrar_sesion() -> None:
 def usuario_actual() -> str | None:
     """Devuelve el nombre asociado a la sesión, si ya se cargó el perfil."""
     return _nombre_actual
+
+def _publico(ruta, **params):
+    with urlopen(f"{URL_SERVIDOR}{ruta}?{urlencode(params)}", timeout=10) as r:
+        return _decode_response(r)
+
+def _resolver_correo(identificador: str) -> str | None:
+    """Acepta usuario o correo y devuelve el correo (None si el usuario no existe)."""
+    identificador = identificador.strip()
+    if "@" in identificador:
+        return identificador
+    return _publico("/api/correo", nombre=identificador).get("correo")

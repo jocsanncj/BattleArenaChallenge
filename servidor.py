@@ -1,36 +1,32 @@
-"""Servidor HTTP pequeño para perfiles y datos de juego persistidos en JSON."""
+"""Servidor HTTP pequeño para perfiles y datos de juego persistidos en SQLite."""
 
 import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import firebase_admin
 from firebase_admin import auth, credentials
 from firebase_admin.exceptions import FirebaseError
 
-from backend.repository import JSONRepository, RepositoryError, UserNotFound
+from backend.repository import (DuplicateEmail, DuplicateUsername, RepositoryError,SQLiteRepository, UserNotFound)
 
 
 MAX_REQUEST_BYTES = 1_048_576
 
 
-## @brief Reúne la persistencia JSON y el verificador de sesiones Firebase.
+## @brief Reúne la persistencia SQLite3 y el verificador de sesiones Firebase.
 class Application:
-    """Conecta el repositorio JSON con la verificación de identidad Firebase."""
+    """Conecta el repositorio SQLite con la verificación de identidad Firebase."""
 
     ## @brief Inicializa el almacenamiento y el bloqueo de Firebase Admin.
     def __init__(self):
         """Inicializa los datos persistentes y el bloqueo de Firebase Admin."""
         data_directory = Path(os.getenv("DATA_DIR", Path(__file__).parent / "data"))
-        legacy_file_value = os.getenv(
-            "LEGACY_USERS_FILE", str(Path(__file__).parent / "DatosUser.json")
-        )
-        legacy_file = Path(legacy_file_value) if legacy_file_value else None
-        self.repository = JSONRepository(data_directory, legacy_file)
-        self.repository.initialize()
+        data_directory.mkdir(parents=True, exist_ok=True)
+        self.repository = SQLiteRepository(data_directory / "juego.db")
         self.firebase_lock = threading.Lock()
 
     ## @brief Verifica criptográficamente el ID token recibido desde el cliente.
@@ -145,13 +141,18 @@ class APIHandler(BaseHTTPRequestHandler):
             if request_path == "/health":
                 self._respond(200, {"status": "ok"})
                 return
+            nombre = parse_qs(urlparse(self.path).query).get("nombre", [""])[0].strip()
+            if request_path == "/api/disponible":
+                self._respond(200, {"disponible": self.app.repository.nombre_disponible(nombre)})
+                return
+            if request_path == "/api/correo":
+                self._respond(200, {"correo": self.app.repository.correo_de(nombre)})
+                return
             if request_path == "/api/profile":
                 claims = self._firebase_claims()
                 if claims.get("email_verified") is not True:
                     raise PermissionError("Verifica tu correo para consultar el perfil.")
-                profile = self.app.repository.get_firebase_profile(
-                    str(claims["uid"])
-                )
+                profile = self.app.repository.obtener(str(claims["uid"]), True)
                 self._respond(200, {"user": profile.to_dict()})
                 return
             self._respond(404, {"error": "Ruta no encontrada."})
@@ -182,15 +183,15 @@ class APIHandler(BaseHTTPRequestHandler):
                 raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
             if not isinstance(email, str) or not isinstance(email_verified, bool):
                 raise PermissionError("La sesión no incluye un correo válido.")
-            self.app.repository.upsert_firebase_profile(
-                str(claims["uid"]), name, email, email_verified
-            )
-            profile = self.app.repository.get_firebase_profile(str(claims["uid"]))
+            self.app.repository.crear(str(claims["uid"]), name.strip(), email)
+            profile = self.app.repository.obtener(str(claims["uid"]), email_verified)
             self._respond(200, {"user": profile.to_dict()})
         except PermissionError as error:
             self._respond(401, {"error": str(error)})
         except ValueError as error:
             self._respond(400, {"error": str(error)})
+        except (DuplicateUsername, DuplicateEmail) as error:
+            self._respond(409, {"error": str(error)})
         except RepositoryError as error:
             print(f"Error POST {request_path}: {type(error).__name__}: {error}")
             self._respond(500, {"error": "No se pudo guardar el perfil."})
@@ -219,7 +220,7 @@ class BattleArenaHTTPServer(ThreadingHTTPServer):
 ## @param port Puerto TCP del servicio HTTP.
 ## @return Servidor multihilo configurado con la aplicación.
 def create_server(host: str = "0.0.0.0", port: int = 8000):
-    """Construye la aplicación JSON y el servidor HTTP listo para iniciar."""
+    """Construye la aplicación SQLite y el servidor HTTP listo para iniciar."""
     return BattleArenaHTTPServer((host, port), APIHandler, Application())
 
 
