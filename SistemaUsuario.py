@@ -143,3 +143,31 @@ reenviar_verificacion = _servicio.reenviar_verificacion
 solicitar_recuperacion = _servicio.recuperar_contrasena
 cerrar_sesion = _servicio.cerrar_sesion
 usuario_actual = _servicio.usuario_actual
+
+# CAMBIO ONLINE: puente de infraestructura para los repositorios del juego.
+_ultimo_refresh_juego = 0.0
+
+def token_para_juego() -> str:
+    """Devuelve un token de sesión; lo renueva como máximo cada 45 minutos para no saturar Firebase."""
+    import time
+    global _ultimo_refresh_juego
+    ahora = time.monotonic()
+    renovar = ahora - _ultimo_refresh_juego >= 45 * 60
+    token = _servicio._token(renovar=renovar)
+    if renovar:
+        _ultimo_refresh_juego = ahora
+    return token
+
+def cliente_juego() -> ClienteServidor:
+    """Devuelve el adaptador HTTP compartido con el que se consulta el servidor Docker."""
+    return _servicio._servidor
+
+def id_usuario_actual() -> int:
+    """Genera un identificador entero estable a partir del UID de Firebase para el modelo legado."""
+    import hashlib
+    token = token_para_juego()
+    cuenta = _servicio._identidad.datos_cuenta(token)
+    uid = str(cuenta.get("localId", ""))
+    if not uid:
+        raise AuthError("No se pudo identificar la cuenta para jugar online.")
+    return int.from_bytes(hashlib.sha256(uid.encode("utf-8")).digest()[:4], "big") & 0x7fffffff

@@ -1,13 +1,13 @@
 """
 PUNTO DE ENTRADA: une las capas y controla el flujo entre pantallas
 
-Este archivo es el que se ejecuta. Crea los servicios y el contexto, abre la
-ventana y decide qué pantalla se muestra en cada momento según el resultado de la
-anterior (una especie de mapa de navegación).
+Este módulo conserva el flujo legado de pantallas y los servicios del juego.
+La entrada recomendada ahora es main.py, que integra autenticación y juego en un
+único ciclo de escenas. Ejecutar este archivo también delega en main.py.
 
 Uso:
-    python principal.py [id_usuario] [nombre]
-    python principal.py 1 Ana        y, en otra terminal:   python principal.py 2 Luis
+    python main.py
+    Inicia sesión y selecciona "Jugar online". El servidor asigna el mismo estado a todos los clientes.
 
 Flujo de pantallas:
     Avatar -> Sala de espera (Configuración / Iniciar partida) -> Arena (ventana nueva).
@@ -40,8 +40,8 @@ import pygame
 
 # Módulos propios del proyecto
 
-# datos: repositorios JSON con los que se guardan avatares y partida.
-from datos import RepositorioAvataresJson, RepositorioPartidaJson
+# CAMBIO ONLINE: los repositorios remotos guardan avatares y partida en el servidor.
+from datos import RepositorioAvataresServidor, RepositorioPartidaServidor
 
 # interfaz: contexto y pantallas que se muestran al usuario.
 from interfaz import Contexto, PantallaArena, PantallaAvatar, PantallaConfiguracion, PantallaSala
@@ -49,6 +49,7 @@ from interfaz import Contexto, PantallaArena, PantallaAvatar, PantallaConfigurac
 # logica: servicios con las reglas del juego y el error ErrorApp, que se captura aquí para
 # mostrarle el mensaje al usuario.
 from logica import ErrorApp, ServicioAvatar, ServicioPartida
+from SistemaUsuario import id_usuario_actual, usuario_actual
 
 
 # 2. FUNCIONES
@@ -78,11 +79,9 @@ def principal():
         Función principal del programa: arma todo y maneja la navegación entre pantallas.
 
         Pasos:
-        1. Lee de la línea de comandos el id y el nombre del jugador. Si faltan, usa el id
-
-        1 y el nombre 'jugador1' (o el id dado).
-        2. Inicia pygame, crea los servicios con sus repositorios JSON, el contexto, y abre
-           la ventana.
+        1. Obtiene el ID estable y el nombre de la sesión Firebase activa.
+        2. Inicia pygame, crea los servicios con repositorios HTTP del servidor, el contexto y
+           abre la ventana.
         3. Entra en un ciclo que repite hasta que el estado sea 'salir'. El estado indica
            la pantalla actual y se actualiza con el resultado de cada una:
         - 'avatar': al continuar pasa a 'sala'; cualquier otra salida termina el programa.
@@ -95,17 +94,19 @@ def principal():
            la partida ya inició, etc.), se vuelve a la pantalla alternativa anterior y el
            mensaje del error se le muestra al usuario como aviso.
         5. Al terminar, ocurra lo que ocurra (bloque finally), el jugador libera su lugar
-           en la sala y se cierra pygame.
+           en la sala y se cierra pygame. Los repositorios son remotos y requieren una sesión Firebase activa.
     Entradas:
-        Ninguna (los datos del jugador se leen de sys.argv).
+        Ninguna. Requiere una sesión Firebase iniciada desde main.py.
     Salidas:
         Ninguna. Efecto: el programa se ejecuta hasta que el usuario sale.
     """
-    id_usuario = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    nombre = sys.argv[2] if len(sys.argv) > 2 else f"jugador{id_usuario}"
+    # CAMBIO ONLINE: la identidad viene de Firebase, no de argumentos locales que
+    # podrían colisionar entre dos computadoras. main.py es la entrada recomendada.
+    id_usuario = id_usuario_actual()
+    nombre = usuario_actual() or f"jugador{id_usuario}"
 
     pygame.init()
-    ctx = Contexto(ServicioAvatar(RepositorioAvataresJson()), ServicioPartida(RepositorioPartidaJson()),
+    ctx = Contexto(ServicioAvatar(RepositorioAvataresServidor()), ServicioPartida(RepositorioPartidaServidor()),
                    id_usuario, nombre)
     ventana = abrir_ventana()
     estado, aviso = "avatar", ""
@@ -131,7 +132,9 @@ def principal():
                         ventana = abrir_ventana()
                     estado = "avatar" if resultado == "volver" else "salir"
             except ErrorApp as e:
-                aviso, estado = str(e), alternativa[estado]
+                aviso, estado = str(e), alternativa.get(estado, "avatar")
+            except (OSError, RuntimeError, ValueError) as e:  # CAMBIO ONLINE: errores de conexión al servidor
+                aviso, estado = str(e), alternativa.get(estado, "avatar")
     finally:
         ctx.partida.salir(id_usuario)
         pygame.quit()
@@ -139,6 +142,8 @@ def principal():
 
 # 3. EJECUCIÓN DEL PROGRAMA
 
-# Solo se ejecuta cuando este archivo se corre directamente, no cuando se importa.
+# CAMBIO ONLINE: la entrada recomendada es la interfaz con escenas y autenticación.
+# Se conserva principal() para compatibilidad, pero ejecutar este archivo abre main.py.
 if __name__ == "__main__":
-    principal()
+    from main import main as iniciar_aplicacion
+    iniciar_aplicacion()

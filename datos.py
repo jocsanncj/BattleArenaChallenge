@@ -1,5 +1,5 @@
 """
-CAPA DE DATOS: modelos y persistencia en archivos JSON
+CAPA DE DATOS: modelos y repositorios JSON/cliente-servidor
 
 Este módulo es la única parte del programa que sabe cómo se guardan los datos.
 Define los modelos (qué información existe) y los repositorios (cómo se lee y se
@@ -19,6 +19,7 @@ Estructura del archivo:
     4. Acceso seguro a un archivo JSON (_ArchivoJson)
     5. Repositorio de avatares (abstracto + JSON)
     6. Repositorio de la partida (abstracto + JSON)
+    7. Repositorios remotos para Docker (avatares y partida online)
 """
 
 
@@ -401,3 +402,50 @@ class RepositorioPartidaJson(RepositorioPartida):
             Ninguna. Efecto: partida.json actualizado.
         """
         self._archivo.escribir(asdict(partida))
+
+
+# CAMBIO ONLINE: repositorios remotos. Los repositorios JSON se conservan para pruebas
+# locales, pero principal.py usa estas implementaciones para partidas compartidas.
+class RepositorioAvataresServidor(RepositorioAvatares):
+    """Guarda y recupera elecciones de avatar mediante la API autenticada del servidor."""
+    def __init__(self):
+        # CAMBIO ONLINE: evita una petición HTTP por fotograma al dibujar cada avatar.
+        self._cache = {}
+
+    def _cliente_token(self):
+        from SistemaUsuario import cliente_juego, token_para_juego
+        return cliente_juego(), token_para_juego()
+
+    def obtener(self, id_usuario: int) -> Optional[EleccionAvatar]:
+        if id_usuario in self._cache:
+            return self._cache[id_usuario]
+        cliente, token = self._cliente_token()
+        e = cliente.obtener_avatar(token, id_usuario)
+        eleccion = EleccionAvatar(e["tipo"], e["valor"]) if isinstance(e, dict) and e.get("tipo") and e.get("valor") else None
+        self._cache[id_usuario] = eleccion
+        return eleccion
+
+    def guardar(self, id_usuario: int, eleccion: EleccionAvatar) -> None:
+        cliente, token = self._cliente_token()
+        cliente.guardar_avatar(token, {"tipo": eleccion.tipo, "valor": eleccion.valor})
+        self._cache[id_usuario] = eleccion
+
+
+class RepositorioPartidaServidor(RepositorioPartida):
+    """Persiste la sala completa en el servidor para que todos los clientes vean el mismo estado."""
+    def _cliente_token(self):
+        from SistemaUsuario import cliente_juego, token_para_juego
+        return cliente_juego(), token_para_juego()
+
+    def cargar(self) -> Partida:
+        cliente, token = self._cliente_token()
+        d = cliente.obtener_partida(token)
+        try:
+            return Partida(ConfiguracionPartida(**d.get("configuracion", {})), d.get("estado", "esperando"),
+                           d.get("iniciada_en"), [Jugador(**j) for j in d.get("jugadores", [])])
+        except (TypeError, ValueError, AttributeError):
+            return Partida()
+
+    def guardar(self, partida: Partida) -> None:
+        cliente, token = self._cliente_token()
+        cliente.guardar_partida(token, asdict(partida))

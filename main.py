@@ -7,13 +7,18 @@ from Window import Window
 from Escenas import MainMenuScene
 
 
-# Evita iniciar la interfaz si este módulo se importa desde otro archivo.
-if __name__ == "__main__":
-    # Crea la ventana de 900 por 600 píxeles con su título.
-    app = Window(width=900, height=600, title="Battle Arena Challenge")
+def main():
+    """Inicia la aplicación gráfica y deja que Window gestione el ciclo de escenas."""
+    # CAMBIO ONLINE: la arena necesita espacio para el mapa y el panel lateral.
+    app = Window(width=1000, height=600, title="Battle Arena Challenge")
     # Crea la fuente que compartirán los controles y mensajes de la interfaz.
     fuente = pygame.font.SysFont("Segoe UI", 20)
     # Construye la escena inicial y la asigna como pantalla activa.
     app.set_scene(MainMenuScene(fuente))
     # Entra en el ciclo de eventos hasta que el jugador cierre la ventana.
     app.run()
+
+
+# Evita iniciar la interfaz si este módulo se importa desde otro archivo.
+if __name__ == "__main__":
+    main()

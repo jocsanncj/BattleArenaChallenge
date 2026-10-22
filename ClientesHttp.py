@@ -166,3 +166,16 @@ class ClienteServidor:
         return self._perfil(self._llamar("POST", "/api/profile", token, {"name": nombre}))
     def obtener_perfil(self, token):
         return self._perfil(self._llamar("GET", "/api/profile", token))
+
+    # CAMBIO ONLINE: persistencia compartida de avatares y sala en el servidor Docker.
+    def obtener_avatar(self, token, id_usuario):
+        return self._llamar("GET", "/api/game/avatar", token, id=int(id_usuario)).get("avatar")
+
+    def guardar_avatar(self, token, eleccion):
+        return self._llamar("PUT", "/api/game/avatar", token, eleccion)
+
+    def obtener_partida(self, token):
+        return self._llamar("GET", "/api/game/state", token).get("partida", {})
+
+    def guardar_partida(self, token, partida):
+        return self._llamar("PUT", "/api/game/state", token, partida)

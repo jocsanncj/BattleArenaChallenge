@@ -202,8 +202,9 @@ class MainMenuScene(BaseScene):
         elif self.page == "recovery_sent":
             self._button(355, 390, 190, "Volver al inicio", lambda: self._set_page("login"))
         elif self.page == "menu":
-            self._button(250, 270, 400, "Ver perfil", self._abrir_perfil)
-            self._button(355, 355, 190, "Cerrar sesión", self._cerrar_sesion)
+            self._button(250, 320, 400, "Jugar online", self._abrir_juego)  # CAMBIO ONLINE: entrada a escenas del juego
+            self._button(250, 375, 400, "Ver perfil", self._abrir_perfil)
+            self._button(355, 435, 190, "Cerrar sesión", self._cerrar_sesion)
         elif self.page == "profile":
             self._button(355, 535, 190, "Volver al menú", lambda: self._set_page("menu"))
 
@@ -343,6 +344,14 @@ class MainMenuScene(BaseScene):
             return
         self.profile_scroll = 0
         self._set_page("profile")
+
+    ## @brief Abre las pantallas del juego online dentro del ciclo de escenas de main.py.
+    ## @return None. Si ocurre un error de conexión, lo muestra en el menú.
+    def _abrir_juego(self):
+        try:
+            self.window.set_scene(JuegoOnlineScene(self.font, self.user_name))
+        except (OSError, RuntimeError, ValueError) as error:
+            self.status = str(error)
 
     ## @brief Borra el estado de sesión y regresa a la bienvenida.
     ## @return None.
@@ -593,3 +602,102 @@ class MainMenuScene(BaseScene):
             "recovery_sent",
         ):
             self._draw_message(surface, self.status, 555, self.small_font, ERROR)
+
+
+# CAMBIO ONLINE: el juego ahora participa en el ciclo de escenas de main.py.
+# Reutiliza las pantallas documentadas de interfaz.py sin iniciar un segundo bucle Pygame.
+class JuegoOnlineScene(BaseScene):
+    """Adaptador de escenas para avatar, sala, configuración y arena online."""
+    def __init__(self, font, nombre_usuario):
+        super().__init__()
+        from datos import RepositorioAvataresServidor, RepositorioPartidaServidor
+        from interfaz import Contexto, PantallaArena, PantallaAvatar, PantallaConfiguracion, PantallaSala
+        from logica import ServicioAvatar, ServicioPartida
+        from SistemaUsuario import id_usuario_actual
+        self.font = font
+        self.nombre_usuario = nombre_usuario
+        self.id_usuario = id_usuario_actual()
+        self.ctx = Contexto(ServicioAvatar(RepositorioAvataresServidor()),
+                            ServicioPartida(RepositorioPartidaServidor()),
+                            self.id_usuario, self.nombre_usuario)
+        self._tipos = {"avatar": PantallaAvatar, "sala": PantallaSala,
+                       "configuracion": PantallaConfiguracion, "arena": PantallaArena}
+        self.page = "avatar"
+        self.screen = PantallaAvatar(self.ctx)
+        self.status = ""
+
+    def _cambiar(self, page):
+        from interfaz import PantallaArena, PantallaAvatar, PantallaConfiguracion, PantallaSala
+        from logica import ErrorApp
+        try:
+            self.page = page
+            if page == "avatar": self.screen = PantallaAvatar(self.ctx)
+            elif page == "sala": self.screen = PantallaSala(self.ctx)
+            elif page == "configuracion": self.screen = PantallaConfiguracion(self.ctx)
+            elif page == "arena": self.screen = PantallaArena(self.ctx)
+            elif page == "menu":
+                menu = MainMenuScene(self.font)
+                menu.user_name = self.nombre_usuario
+                menu.page = "menu"
+                menu._configure_page()
+                self.window.set_scene(menu)
+        except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+            self.status = str(error)
+            self.page, self.screen = "sala", PantallaSala(self.ctx)
+
+    def handle_event(self, event):
+        from logica import ErrorApp
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            if self.page == "arena":
+                try: self.ctx.partida.salir(self.id_usuario)
+                except Exception: pass
+                self._cambiar("menu")
+            elif self.page == "sala":
+                try: self.ctx.partida.salir(self.id_usuario)
+                except Exception: pass
+                self._cambiar("menu")
+            elif self.page == "configuracion": self._cambiar("sala")
+            else: self._cambiar("menu")
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for boton in self.screen.botones():
+                if boton.rectangulo.collidepoint(event.pos):
+                    try:
+                        resultado = boton.accion()
+                        if resultado == "siguiente": self._cambiar("sala")
+                        elif resultado == "configuracion": self._cambiar("configuracion")
+                        elif resultado == "volver":
+                            if self.page == "configuracion": self._cambiar("sala")
+                            else:
+                                self.ctx.partida.salir(self.id_usuario)
+                                self._cambiar("menu")
+                        elif resultado == "arena": self._cambiar("arena")
+                    except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                        self.screen.mensaje = str(error)
+                    break
+
+    def update(self, mouse_pos):
+        from logica import ErrorApp
+        try:
+            resultado = self.screen.actualizar()
+            if resultado == "arena": self._cambiar("arena")
+            elif resultado == "volver": self._cambiar("sala")
+        except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+            self.screen.mensaje = str(error)
+
+    def draw(self, surface):
+        # CAMBIO ONLINE: conserva el tamaño de la ventana y el dibujo de cada pantalla.
+        try:
+            if self.page == "arena":
+                superficie = surface
+                superficie.fill((25, 28, 40))
+                self.screen.dibujar(superficie)
+            else:
+                self.screen.dibujar(surface)
+        except (OSError, RuntimeError, ValueError) as error:
+            # Un fallo de red se informa en la escena en lugar de cerrar Pygame.
+            self.status = str(error)
+            surface.fill((25, 28, 40))
+        if self.status:
+            texto = self.font.render(self.status, True, ERROR)
+            surface.blit(texto, (20, surface.get_height() - 30))

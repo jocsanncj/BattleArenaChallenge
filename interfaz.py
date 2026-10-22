@@ -318,7 +318,8 @@ class Pantalla:
             Guarda el contexto, crea las dos fuentes, la insignia del avatar y deja el mensaje
             de aviso vacío (en color de texto normal).
         Entradas:
-            ctx (Contexto): contexto de la aplicación.
+            ctx (Contexto): contexto de la aplicación. Sus servicios pueden usar repositorios JSON
+            para pruebas locales o repositorios HTTP para compartir los datos online.
         Salidas:
             Ninguna.
         """
@@ -420,6 +421,9 @@ class Pantalla:
         try:
             return accion()
         except ErrorApp as e:
+            self.mensaje, self.color_mensaje = str(e), ERROR
+            return None
+        except (OSError, RuntimeError, ValueError) as e:  # CAMBIO ONLINE: errores HTTP/servidor visibles en la pantalla
             self.mensaje, self.color_mensaje = str(e), ERROR
             return None
 

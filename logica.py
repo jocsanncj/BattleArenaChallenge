@@ -4,6 +4,7 @@ CAPA DE LÓGICA: reglas del juego, sin pantallas
 Aquí viven las reglas de negocio. Este módulo no dibuja ventanas ni reacciona a
 clics (eso es trabajo de interfaz.py) y tampoco sabe cómo se guardan los datos
 (eso es trabajo de datos.py): solo usa los repositorios abstractos que recibe.
+CAMBIO ONLINE: los mismos servicios funcionan con repositorios HTTP conectados al servidor Docker.
 
 Clases principales:
     ServicioAvatar   ->  elegir, subir y dibujar avatares (US-06).
@@ -110,6 +111,7 @@ AVATARES_PREDETERMINADOS: List[AvatarPredeterminado] = [
     AvatarPredeterminado("avatar_4", "Amarillo", (220, 180, 40), "rombo"),
     AvatarPredeterminado("avatar_5", "Morado",   (150, 80, 190), "cruz"),
 ]
+
 
 
 class ServicioAvatar:
@@ -486,6 +488,8 @@ ARENA_PREDETERMINADA = MapaArena("Arena Clásica", (
 
 # 5. PARTIDA
 
+# CAMBIO ONLINE: todas las operaciones de sala/configuración pasan por el repositorio
+# inyectado; con RepositorioPartidaServidor el estado se comparte entre clientes.
 class ServicioPartida:
     """
     Descripción:
@@ -503,7 +507,7 @@ class ServicioPartida:
     """
 
     JUGADORES_MINIMOS = 2
-    PERMITIR_UN_JUGADOR = True
+    PERMITIR_UN_JUGADOR = False  # CAMBIO ONLINE: se exigen dos jugadores conectados para iniciar
 
     def __init__(self, repositorio: RepositorioPartida, arena: MapaArena = ARENA_PREDETERMINADA):
         """
