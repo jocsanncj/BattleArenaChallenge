@@ -171,7 +171,7 @@ class MainMenuScene(BaseScene):
             self.fields = [
                 CampoTexto("Nombre de usuario", 145, max_length=40),
                 CampoTexto("Correo electrónico", 215, max_length=254),
-                CampoTexto("Contraseña (mínimo 8 caracteres)", 285, oculto=True),
+                CampoTexto("Contraseña (8+, letras y números)", 285, oculto=True),
                 CampoTexto("Confirmar contraseña", 355, oculto=True),
             ]
             self._button(250, 455, 190, "Crear cuenta", self._registrar)
@@ -184,7 +184,7 @@ class MainMenuScene(BaseScene):
             self._button(460, 370, 190, "Volver al inicio", lambda: self._set_page("welcome"))
         elif self.page == "login":
             self.fields = [
-                CampoTexto("Correo electrónico", 210, max_length=254),
+                CampoTexto("Usuario o correo", 210, max_length=254),
                 CampoTexto("Contraseña", 285, oculto=True),
             ]
             self._button(250, 375, 190, "Entrar", self._iniciar_sesion)
@@ -283,7 +283,7 @@ class MainMenuScene(BaseScene):
                 self.status = "Fallaste tres veces. Puedes solicitar un enlace para recuperar tu contraseña."
             else:
                 self.status = (
-                    f"Correo o contraseña incorrectos. "
+                    f"Usuario/correo o contraseña incorrectos."
                     f"Intento {self.failed_attempts}/3."
                 )
             return

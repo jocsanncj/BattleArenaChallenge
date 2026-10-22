@@ -13,7 +13,7 @@ services:
       FIREBASE_ADMIN_CREDENTIALS: /run/secrets/firebase-admin.json
     volumes:
       - battle-arena-data:/data
-      - ./proyecto-modelado-dee24-firebase-adminsdk-fbsvc-1806a6701a.json:/run/secrets/firebase-admin.json:ro
+      - ./firebase-admin.json:/run/secrets/firebase-admin.json:ro
     healthcheck:
       test:
         - CMD
