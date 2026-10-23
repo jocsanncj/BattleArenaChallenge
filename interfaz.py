@@ -71,6 +71,8 @@ from datos import ConfiguracionPartida
 # Nota: tkinter (explorador de archivos) se importa dentro de elegir_archivo_imagen,
 # porque solo se necesita al cargar un avatar propio.
 from logica import Casilla, ErrorApp, ServicioAvatar, ServicioPartida
+from us10 import draw_players
+from us15 import draw_scores
 
 
 # 2. CONSTANTES DE COLOR
@@ -702,7 +704,7 @@ class PantallaSala(Pantalla):
             Ninguna.
         """
         self.dibujar_encabezado(superficie, "Sala de espera")
-        p, total = self._partida, len(self.ctx.partida.arena.puntos_inicio())
+        p, total = self._partida, min(2, len(self.ctx.partida.arena.puntos_inicio()))
         esperando = len(p.jugadores) < ServicioPartida.JUGADORES_MINIMOS
         msg = "Esperando jugador..." if esperando else "Jugadores listos. Pueden iniciar la partida."
         if esperando and ServicioPartida.PERMITIR_UN_JUGADOR:
@@ -988,6 +990,16 @@ class PantallaArena(Pantalla):
             tuple: (etiqueta, tiempo en formato 'MM:SS').
         """
         cfg, transcurrido = self._partida.configuracion, self.ctx.partida.segundos_transcurridos(self._partida)
+        juego = self._partida.estado_juego
+        if juego:
+            if cfg.modo_fin == "tiempo":
+                segundos = juego.get("remaining_seconds")
+                etiqueta = "Tiempo restante"
+            else:
+                segundos = juego.get("elapsed_seconds", 0)
+                etiqueta = "Tiempo transcurrido"
+            if segundos is not None:
+                return etiqueta, f"{int(max(0, segundos)) // 60:02d}:{int(max(0, segundos)) % 60:02d}"
         if cfg.modo_fin == "tiempo":
             segundos, etiqueta = max(0, cfg.minutos_fin * 60 - transcurrido), "Tiempo restante"
         else:
@@ -1014,24 +1026,64 @@ class PantallaArena(Pantalla):
         T, m, p = self.TAM_CASILLA, self.mapa, self._partida
         superficie.fill(FONDO)
         self._dibujar_mapa(superficie)
-        for j in p.jugadores:
-            c, f = m.puntos_inicio()[j.indice_inicio]
-            superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, T - 6), (c * T + 3, f * T + 3))
-            if j.id_usuario == self.ctx.id_usuario:
-                pygame.draw.circle(superficie, ACENTO, (c * T + T // 2, f * T + T // 2), T // 2, 2)
+        juego = p.estado_juego
+        if juego:
+            jugadores_dibujo = []
+            imagenes_avatar = {}
+            posicion_local = None
+            for jugador in juego.get("players", []):
+                user_id = jugador["user_id"]
+                c, f = int(jugador["x"]), int(jugador["y"])
+                jugadores_dibujo.append(dict(
+                    jugador,
+                    x=c * T + T // 2,
+                    y=f * T + T // 2,
+                ))
+                imagenes_avatar[jugador["avatar_id"]] = self.ctx.avatares.obtener_superficie(user_id, T - 6)
+                if user_id == self.ctx.id_usuario:
+                    posicion_local = (c * T + T // 2, f * T + T // 2)
+            draw_players(
+                superficie,
+                dict(juego, players=jugadores_dibujo),
+                imagenes_avatar,
+                size=T - 6,
+            )
+            if posicion_local:
+                pygame.draw.circle(superficie, ACENTO, posicion_local, T // 2, 2)
+        else:
+            for j in p.jugadores:
+                c, f = m.puntos_inicio()[j.indice_inicio]
+                superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, T - 6),
+                                (c * T + 3, f * T + 3))
+                if j.id_usuario == self.ctx.id_usuario:
+                    pygame.draw.circle(superficie, ACENTO,
+                                       (c * T + T // 2, f * T + T // 2), T // 2, 2)
         x0 = m.columnas * T
         pygame.draw.rect(superficie, PANEL, (x0, 0, self.ANCHO_PANEL, superficie.get_height()))
         x = x0 + 14
         self.insignia.dibujar(superficie, (x, 12))
-        self.texto(superficie, "Partida en curso" if p.estado == "jugando" else "Esperando", (x, 74))
+        mensaje_estado = (juego.get("message", "Partida en curso.") if juego else
+                          "Partida en curso" if p.estado == "jugando" else "Esperando")
+        self.texto(superficie, mensaje_estado, (x, 74))
         etiqueta, valor = self._temporizador()
         self.texto(superficie, etiqueta, (x, 104))
         self.texto(superficie, valor, (x, 124), self.fuente_grande)
         for i, linea in enumerate(describir_configuracion(p.configuracion)):
             self.texto(superficie, linea, (x, 184 + i * 22))
         self.texto(superficie, "Jugadores", (x, 244), self.fuente)
-        for i, j in enumerate(p.jugadores):
-            superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, 28), (x, 274 + i * 34))
-            self.texto(superficie, j.nombre_usuario + (" (tú)" if j.id_usuario == self.ctx.id_usuario else ""),
-                       (x + 36, 281 + i * 34))
-        self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
+        if juego:
+            for i, jugador in enumerate(juego.get("players", [])):
+                user_id = jugador["user_id"]
+                superficie.blit(self.ctx.avatares.obtener_superficie(user_id, 28), (x, 274 + i * 44))
+            draw_scores(superficie, juego, position=(x + 36, 281))
+            if juego.get("status") == "finished":
+                self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
+            else:
+                self.texto(superficie, "WASD / flechas: mover", (x, superficie.get_height() - 44))
+                self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
+        else:
+            for i, j in enumerate(p.jugadores):
+                superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, 28), (x, 274 + i * 34))
+                self.texto(superficie, j.nombre_usuario + (" (tú)" if j.id_usuario == self.ctx.id_usuario else ""),
+                           (x + 36, 281 + i * 34))
+            self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))

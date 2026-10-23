@@ -625,6 +625,7 @@ class JuegoOnlineScene(BaseScene):
         self.page = "avatar"
         self.screen = PantallaAvatar(self.ctx)
         self.status = ""
+        self._victory_match_id = None
 
     def _cambiar(self, page):
         from interfaz import PantallaArena, PantallaAvatar, PantallaConfiguracion, PantallaSala
@@ -639,6 +640,7 @@ class JuegoOnlineScene(BaseScene):
                 menu = MainMenuScene(self.font)
                 menu.user_name = self.nombre_usuario
                 menu.page = "menu"
+                menu.status = self.status
                 menu._configure_page()
                 self.window.set_scene(menu)
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
@@ -649,16 +651,38 @@ class JuegoOnlineScene(BaseScene):
         from logica import ErrorApp
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.page == "arena":
-                try: self.ctx.partida.salir(self.id_usuario)
-                except Exception: pass
+                try:
+                    self.ctx.partida.salir(self.id_usuario)
+                except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                    self.status = str(error)
                 self._cambiar("menu")
             elif self.page == "sala":
-                try: self.ctx.partida.salir(self.id_usuario)
-                except Exception: pass
+                try:
+                    self.ctx.partida.salir(self.id_usuario)
+                except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                    self.status = str(error)
                 self._cambiar("menu")
             elif self.page == "configuracion": self._cambiar("sala")
             else: self._cambiar("menu")
             return
+        if event.type == pygame.KEYDOWN and self.page == "arena":
+            direcciones = {
+                pygame.K_UP: "up",
+                pygame.K_w: "up",
+                pygame.K_DOWN: "down",
+                pygame.K_s: "down",
+                pygame.K_LEFT: "left",
+                pygame.K_a: "left",
+                pygame.K_RIGHT: "right",
+                pygame.K_d: "right",
+            }
+            direccion = direcciones.get(event.key)
+            if direccion:
+                try:
+                    self.ctx.partida.mover(direccion)
+                except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                    self.screen.mensaje = str(error)
+                return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for boton in self.screen.botones():
                 if boton.rectangulo.collidepoint(event.pos):
@@ -669,7 +693,10 @@ class JuegoOnlineScene(BaseScene):
                         elif resultado == "volver":
                             if self.page == "configuracion": self._cambiar("sala")
                             else:
-                                self.ctx.partida.salir(self.id_usuario)
+                                try:
+                                    self.ctx.partida.salir(self.id_usuario)
+                                except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                                    self.status = str(error)
                                 self._cambiar("menu")
                         elif resultado == "arena": self._cambiar("arena")
                     except (ErrorApp, OSError, RuntimeError, ValueError) as error:
@@ -682,6 +709,14 @@ class JuegoOnlineScene(BaseScene):
             resultado = self.screen.actualizar()
             if resultado == "arena": self._cambiar("arena")
             elif resultado == "volver": self._cambiar("sala")
+            if self.page == "arena":
+                juego = self.screen._partida.estado_juego
+                if juego and juego.get("status") == "finished":
+                    match_id = juego.get("match_id")
+                    if match_id and match_id != self._victory_match_id:
+                        from us17 import launch_victory_window
+                        launch_victory_window(juego)
+                        self._victory_match_id = match_id
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.screen.mensaje = str(error)
 
@@ -701,3 +736,8 @@ class JuegoOnlineScene(BaseScene):
         if self.status:
             texto = self.font.render(self.status, True, ERROR)
             surface.blit(texto, (20, surface.get_height() - 30))
+
+    def on_close(self):
+        """Libera la plaza y pausa la partida cuando se cierra la ventana."""
+        if self.page in {"sala", "configuracion", "arena"}:
+            self.ctx.partida.salir(self.id_usuario)

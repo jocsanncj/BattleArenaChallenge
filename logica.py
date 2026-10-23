@@ -8,8 +8,7 @@ CAMBIO ONLINE: los mismos servicios funcionan con repositorios HTTP conectados a
 
 Clases principales:
     ServicioAvatar   ->  elegir, subir y dibujar avatares (US-06).
-    MapaArena        ->  plano de la arena, límites, casillas transitables, puntos de
-                         inicio y reactor (US-07).
+    MapaArena        ->  plano de la arena, límites, casillas transitables, puntos de inicio y reactor (US-07).
     ServicioPartida  ->  configuración (US-08) y sala, inicio y temporizador (US-09).
     ErrorApp         ->  errores pensados para mostrarse al usuario.
 
@@ -63,7 +62,7 @@ import pygame
 # datos: modelos (configuración, avatar, jugador, partida) y repositorios abstractos que
 # usa la lógica; así depende de los contratos y no de cómo se guardan los datos.
 from datos import (ConfiguracionPartida, EleccionAvatar, Jugador, Partida, RepositorioAvatares,
-                   RepositorioPartida)
+                   RepositorioPartida, RepositorioPartidaOnline)
 
 
 # 2. ERRORES DE LA APLICACIÓN
@@ -569,6 +568,12 @@ class ServicioPartida:
         if configuracion.modo_fin not in ("tiempo", "puntos") or min(
                 configuracion.minutos_fin, configuracion.puntos_fin, configuracion.segundos_congelacion) < 1:
             raise ErrorApp("Valores de configuración inválidos.")
+        if isinstance(self._repo, RepositorioPartidaOnline):
+            try:
+                self._repo.guardar(Partida(configuracion=configuracion))
+            except (OSError, RuntimeError, ValueError) as error:
+                raise ErrorApp(str(error)) from error
+            return
         partida = self._repo.cargar()
         partida.configuracion = configuracion
         self._repo.guardar(partida)
@@ -594,6 +599,16 @@ class ServicioPartida:
             Jugador: el jugador dentro de la sala. Lanza ErrorApp si la sala está llena o la
                 partida ya inició.
         """
+        if isinstance(self._repo, RepositorioPartidaOnline):
+            try:
+                self._repo.unirse_online()
+                partida = self._repo.cargar()
+            except (OSError, RuntimeError, ValueError) as error:
+                raise ErrorApp(str(error)) from error
+            jugador = next((j for j in partida.jugadores if j.id_usuario == id_usuario), None)
+            if jugador is None:
+                raise ErrorApp("El servidor no confirmó tu ingreso a la sala.")
+            return jugador
         partida = self._repo.cargar()
         for j in partida.jugadores:
             if j.id_usuario == id_usuario:
@@ -621,6 +636,12 @@ class ServicioPartida:
         Salidas:
             Ninguna. Efecto: partida actualizada.
         """
+        if isinstance(self._repo, RepositorioPartidaOnline):
+            try:
+                self._repo.salir_online()
+            except (OSError, RuntimeError, ValueError) as error:
+                raise ErrorApp(str(error)) from error
+            return
         partida = self._repo.cargar()
         restantes = [j for j in partida.jugadores if j.id_usuario != id_usuario]
         if len(restantes) != len(partida.jugadores):
@@ -648,6 +669,12 @@ class ServicioPartida:
             Ninguna. Efecto: partida en estado 'jugando'. Lanza ErrorApp si ya inició o faltan
                 jugadores.
         """
+        if isinstance(self._repo, RepositorioPartidaOnline):
+            try:
+                self._repo.iniciar_online()
+            except (OSError, RuntimeError, ValueError) as error:
+                raise ErrorApp(str(error)) from error
+            return
         partida = self._repo.cargar()
         if partida.estado == "jugando":
             raise ErrorApp("La partida ya inició.")
@@ -656,6 +683,15 @@ class ServicioPartida:
             raise ErrorApp("Esperando jugador...")
         partida.estado, partida.iniciada_en = "jugando", time.time()
         self._repo.guardar(partida)
+
+    def mover(self, direccion: str) -> None:
+        """Solicita un movimiento al servidor; este valida y confirma la acción."""
+        if not isinstance(self._repo, RepositorioPartidaOnline):
+            raise ErrorApp("Los movimientos remotos requieren el servidor de juego.")
+        try:
+            self._repo.mover_online(direccion)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ErrorApp(str(error)) from error
 
     def segundos_transcurridos(self, partida: Partida) -> float:
         """

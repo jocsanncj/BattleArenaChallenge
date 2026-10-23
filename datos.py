@@ -51,7 +51,7 @@ from dataclasses import asdict, dataclass, field
 
 # typing (List, Optional): anotaciones de tipo que documentan qué recibe y devuelve cada
 # función; Optional indica que el valor también puede ser None.
-from typing import List, Optional
+from typing import List, Optional, Protocol, runtime_checkable
 
 # Carpeta donde está este archivo. Los JSON se guardan aquí y no en el directorio desde
 # donde se ejecuta el comando, para que todos los jugadores lean los mismos archivos.
@@ -138,6 +138,7 @@ class Partida:
     estado: str = "esperando"
     iniciada_en: Optional[float] = None
     jugadores: List[Jugador] = field(default_factory=list)
+    estado_juego: Optional[dict] = None
 
 
 class _ArchivoJson:
@@ -432,20 +433,55 @@ class RepositorioAvataresServidor(RepositorioAvatares):
 
 
 class RepositorioPartidaServidor(RepositorioPartida):
-    """Persiste la sala completa en el servidor para que todos los clientes vean el mismo estado."""
+    """Envía acciones de juego al servidor y recibe su estado autoritativo."""
     def _cliente_token(self):
         from SistemaUsuario import cliente_juego, token_para_juego
         return cliente_juego(), token_para_juego()
 
     def cargar(self) -> Partida:
         cliente, token = self._cliente_token()
-        d = cliente.obtener_partida(token)
+        respuesta = cliente.obtener_partida(token)
+        d = respuesta.get("partida")
+        if not isinstance(d, dict):
+            raise ValueError("El servidor devolvió un estado de partida inválido.")
         try:
-            return Partida(ConfiguracionPartida(**d.get("configuracion", {})), d.get("estado", "esperando"),
-                           d.get("iniciada_en"), [Jugador(**j) for j in d.get("jugadores", [])])
-        except (TypeError, ValueError, AttributeError):
-            return Partida()
+            return Partida(
+                ConfiguracionPartida(**d.get("configuracion", {})),
+                d.get("estado", "esperando"),
+                d.get("iniciada_en"),
+                [Jugador(**j) for j in d.get("jugadores", [])],
+                respuesta.get("game"),
+            )
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ValueError("El servidor devolvió un estado de partida inválido.") from error
 
     def guardar(self, partida: Partida) -> None:
         cliente, token = self._cliente_token()
-        cliente.guardar_partida(token, asdict(partida))
+        configuracion = asdict(partida.configuracion)
+        cliente.guardar_configuracion_partida(token, configuracion)
+
+    def unirse_online(self) -> None:
+        cliente, token = self._cliente_token()
+        cliente.unirse_partida(token)
+
+    def salir_online(self) -> None:
+        cliente, token = self._cliente_token()
+        cliente.salir_partida(token)
+
+    def iniciar_online(self) -> None:
+        cliente, token = self._cliente_token()
+        cliente.iniciar_partida(token)
+
+    def mover_online(self, direccion: str) -> None:
+        cliente, token = self._cliente_token()
+        cliente.mover_jugador(token, direccion)
+
+
+@runtime_checkable
+class RepositorioPartidaOnline(Protocol):
+    """Operaciones de sala que solo ofrece el repositorio conectado al servidor."""
+
+    def unirse_online(self) -> None: ...
+    def salir_online(self) -> None: ...
+    def iniciar_online(self) -> None: ...
+    def mover_online(self, direccion: str) -> None: ...

@@ -2,7 +2,7 @@
 
 Videojuego multijugador de escritorio hecho con Python y Pygame (CE-1105 Principios de Modelado en Ingeniería, TEC).
 
-**Estado del Sprint 2:** cuentas de usuario (US-01 a US-05): registro, verificación de correo, inicio de sesión, perfil y recuperación de contraseña. Avatar, arena, partidas multijugador y hardware se agregan en otras historias de usuario.
+**Estado actual:** registro e inicio de sesión con Firebase y partida online para dos jugadores. El servidor valida los movimientos, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP.
 
 ---
 
@@ -17,12 +17,17 @@ Jugador ── Pygame (main.py, Escenas.py)
                     │                           verificación / recuperación
                     └─ ClienteServidor ─────► Servidor (servidor.py, en Docker)
                         (ClientesHttp.py)       ├─ verifica la sesión con Firebase Admin
-                                                └─ guarda perfiles en SQLite (/data/juego.db)
+                                                ├─ guarda perfiles en SQLite (/data/juego.db)
+                                                └─ controla sala, movimientos, puntajes y resultado
+                                                    (us10.py, us15.py, us16.py)
+                                                    └─ devuelve estados por HTTP; el cliente
+                                                       muestra la arena y la celebración (us17.py)
 ```
 
 - **Firebase Authentication** guarda las contraseñas y envía los correos de verificación y recuperación. Nuestro código nunca guarda contraseñas.
 - **El servidor** corre en Docker y guarda lo propio del juego (nombre de usuario único, récord, historial, logros) en una base de datos **SQLite**.
 - **El cliente** (Pygame) se ejecuta directamente en tu computadora, sin Docker.
+- Para la partida, el cliente envía acciones HTTP (unirse, iniciar o moverse); no puede enviar el puntaje ni reemplazar el estado completo. El servidor valida cada paso y los dos clientes consultan el mismo estado.
 
 Hay dos roles, y puedes cumplir los dos a la vez:
 
@@ -194,6 +199,9 @@ No necesitas Docker en la tuya.
 3. **Iniciar sesión** con el **nombre de usuario o con el correo**.
 4. **Recuperar contraseña:** pide el enlace, abre la página de Firebase y define la nueva contraseña. El enlace expira.
 5. **Perfil:** nombre, estado del correo, estadísticas, logros, ranking e historial.
+6. **Partida online:** inicia sesión en dos computadoras, elige avatares distintos, entra a la sala e inicia cuando aparezcan ambos jugadores. En la arena, mueve tu personaje con **WASD** o las **flechas**. Cada movimiento válido suma un punto; el servidor comparte posiciones y puntajes. Al concluir, cada cliente abre su ventana de victoria.
+
+La partida se actualiza mediante consultas HTTP periódicas, por lo que no requiere WebSockets ni abrir otro puerto. La sala y su configuración se conservan en el servidor; el estado activo de los movimientos y el temporizador reside en memoria del proceso servidor. Si se reinicia el contenedor durante una partida, esa partida activa se pierde y la sala se reinicia al siguiente acceso.
 
 **Para repetir pruebas de registro** sin borrar nada, usa correos distintos. Con Gmail, `tucorreo+1@gmail.com`, `tucorreo+2@gmail.com`, etc. llegan a la misma bandeja.
 
@@ -205,6 +213,8 @@ No necesitas Docker en la tuya.
 |---|---|---|
 | Correo, contraseña y estado "verificado" | **Firebase** (en la nube, compartido por todo el equipo) | Firebase Console → Authentication → Users → *Delete account* |
 | Perfil, récord, historial | **SQLite** (`juego.db`) en el volumen de Docker `battle-arena-data` | `docker compose down -v` (borra todos los perfiles) |
+| Avatar y sala de espera/configuración | Archivo `partida_online.json` dentro de `/data` en el servidor | No lo borres manualmente mientras haya usuarios conectados |
+| Posiciones y puntajes de la partida activa | Memoria del proceso servidor | Se reinicia al detener/reiniciar el contenedor |
 
 Si un correo ya existe en Firebase, el registro dirá que ya tiene una cuenta aunque hayas borrado la base de datos del servidor. Para repetir un registro con el mismo correo hay que borrar **ambos** lugares.
 
@@ -230,6 +240,8 @@ Linux Mint:  .venv/bin/python -m unittest discover -s tests -v
 | `SistemaUsuario.py` | Casos de uso de cuenta (`ServicioAuth`) |
 | `ClientesHttp.py` | Conexión con Firebase y con el servidor |
 | `servidor.py` | API del servidor |
+| `us10.py`, `us15.py`, `us16.py` | Estado de arena, puntaje y reglas ejecutadas por el servidor |
+| `us17.py` | Ventana de resultado que se abre en el cliente |
 | `backend/repository.py` | Base de datos SQLite (tablas `jugadores`, `partidas`, `logros`) |
 | `backend/jugador.py` | Clase `Jugador` (datos y estadísticas del jugador) |
 | `tests/` | Pruebas automáticas |

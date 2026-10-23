@@ -78,8 +78,12 @@ class Window:
         finally:
             # Deja el estado apagado incluso si el bucle termina por una excepción.
             self.running = False
-            # Libera los recursos inicializados por Pygame.
-            pygame.quit()
+            try:
+                if self.current_scene and hasattr(self.current_scene, "on_close"):
+                    self.current_scene.on_close()
+            finally:
+                # Libera los recursos inicializados por Pygame incluso si falla la salida remota.
+                pygame.quit()
     ## @brief Solicita que el bucle de run termine en su siguiente comprobación.
     ## @return None.
     def quit(self):

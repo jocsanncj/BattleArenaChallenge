@@ -175,7 +175,19 @@ class ClienteServidor:
         return self._llamar("PUT", "/api/game/avatar", token, eleccion)
 
     def obtener_partida(self, token):
-        return self._llamar("GET", "/api/game/state", token).get("partida", {})
+        return self._llamar("GET", "/api/game/state", token)
 
-    def guardar_partida(self, token, partida):
-        return self._llamar("PUT", "/api/game/state", token, partida)
+    def unirse_partida(self, token):
+        return self._llamar("POST", "/api/game/join", token)
+
+    def salir_partida(self, token):
+        return self._llamar("POST", "/api/game/leave", token)
+
+    def iniciar_partida(self, token):
+        return self._llamar("POST", "/api/game/start", token)
+
+    def mover_jugador(self, token, direccion):
+        return self._llamar("POST", "/api/game/move", token, {"direction": direccion})
+
+    def guardar_configuracion_partida(self, token, configuracion):
+        return self._llamar("PUT", "/api/game/config", token, configuracion)
