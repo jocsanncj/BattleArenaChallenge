@@ -58,3 +58,56 @@ def leer_estado(joy):
 
     return " | ".join(partes) if partes else "(sin actividad)"
 
+def main():
+    pygame.init()
+    pygame.joystick.init()
+
+    controles = {}
+
+    def registrar(indice):
+        joy = pygame.joystick.Joystick(indice)
+        joy.init()
+        controles[joy.get_instance_id()] = joy
+        print(f"\n[+] Control conectado: {joy.get_name()}")
+        info_control(joy)
+
+    cantidad = pygame.joystick.get_count()
+    if cantidad == 0:
+        print("No se detectó ningún control.")
+        print("Revisa: cable USB (que sea de datos), otro puerto USB,")
+        print("y que el control esté encendido / en el modo correcto.")
+        print("Esperando a que conectes uno... (Ctrl+C para salir)\n")
+    else:
+        print(f"Controles detectados: {cantidad}")
+        for i in range(cantidad):
+            registrar(i)
+
+    print("\nMueve sticks y presiona botones para probar. Ctrl+C para salir.\n")
+
+    ultimo = {}
+    try:
+        while True:
+            for evento in pygame.event.get():
+                if evento.type == pygame.JOYDEVICEADDED:
+                    registrar(evento.device_index)
+                elif evento.type == pygame.JOYDEVICEREMOVED:
+                    joy = controles.pop(evento.instance_id, None)
+                    nombre = joy.get_name() if joy else "desconocido"
+                    ultimo.pop(evento.instance_id, None)
+                    print(f"\n[-] Control desconectado: {nombre}")
+
+            for iid, joy in controles.items():
+                estado = leer_estado(joy)
+                if estado != ultimo.get(iid):
+                    ultimo[iid] = estado
+                    print(f"[{joy.get_name()}] {estado}")
+
+            time.sleep(0.02)  # ~50 lecturas por segundo
+    except KeyboardInterrupt:
+        print("\nPrueba finalizada.")
+    finally:
+        pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
