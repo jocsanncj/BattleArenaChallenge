@@ -4,8 +4,9 @@ import sys
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"  # Oculta el mensaje de bienvenida
 
 import pygame
+print("El archivo se está ejecutando")
 
-RUTA_SONIDO = "Efecto.mp3"
+RUTA_SONIDO = "media\Efecto.mp3"
 
 def main():
     pygame.init()  # Inicia pygame y el audio
