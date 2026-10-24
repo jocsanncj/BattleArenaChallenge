@@ -37,3 +37,24 @@ def info_control(joy):
     except Exception:
         pass
     print("-" * 60)
+
+def leer_estado(joy):
+    """Devuelve una línea de texto con lo que está activo en el control."""
+    partes = []
+
+    botones = [i for i in range(joy.get_numbuttons()) if joy.get_button(i)]
+    if botones:
+        partes.append("Botones: " + ",".join(str(b) for b in botones))
+
+    for i in range(joy.get_numaxes()):
+        valor = joy.get_axis(i)
+        if abs(valor) > ZONA_MUERTA:
+            partes.append(f"Eje{i}={valor:+.2f}")
+
+    for i in range(joy.get_numhats()):
+        hat = joy.get_hat(i)
+        if hat != (0, 0):
+            partes.append(f"Hat{i}={hat}")
+
+    return " | ".join(partes) if partes else "(sin actividad)"
+
