@@ -665,23 +665,9 @@ class JuegoOnlineScene(BaseScene):
             elif self.page == "configuracion": self._cambiar("sala")
             else: self._cambiar("menu")
             return
-        if event.type == pygame.KEYDOWN and self.page == "arena":
-            direcciones = {
-                pygame.K_UP: "up",
-                pygame.K_w: "up",
-                pygame.K_DOWN: "down",
-                pygame.K_s: "down",
-                pygame.K_LEFT: "left",
-                pygame.K_a: "left",
-                pygame.K_RIGHT: "right",
-                pygame.K_d: "right",
-            }
-            direccion = direcciones.get(event.key)
-            if direccion:
-                try:
-                    self.ctx.partida.mover(direccion)
-                except (ErrorApp, OSError, RuntimeError, ValueError) as error:
-                    self.screen.mensaje = str(error)
+        if self.page == "arena":
+            self.screen.procesar_evento(event)
+            if event.type != pygame.MOUSEBUTTONDOWN:
                 return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for boton in self.screen.botones():

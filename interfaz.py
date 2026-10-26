@@ -62,6 +62,8 @@ import pygame
 
 # Módulos propios del proyecto
 
+import acciones
+
 # datos: ConfiguracionPartida, solo para indicar el tipo que describe describir_configuracion.
 from datos import ConfiguracionPartida
 
@@ -357,6 +359,9 @@ class Pantalla:
         """
         return None
 
+    def procesar_evento(self, _evento: pygame.event.Event) -> None:
+        """Método opcional para que una pantalla hija procese eventos de entrada."""
+
     def dibujar(self, superficie: pygame.Surface) -> None:
         """
         Descripción:
@@ -395,6 +400,7 @@ class Pantalla:
                     return "salir"
                 if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE and self.tecla_escape:
                     return self.tecla_escape
+                self.procesar_evento(evento)
                 if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
                     for b in self.botones():
                         if b.rectangulo.collidepoint(evento.pos):
@@ -859,6 +865,7 @@ class PantallaArena(Pantalla):
         tamaño exacto del mapa más un panel lateral. Dibuja el mapa, a los jugadores en
         sus puntos de inicio con su avatar, el estado de la partida, el temporizador y la
         configuración, y reproduce música de fondo mientras está abierta.
+        Cada cliente puede seleccionar teclado o gamepad para mover a su jugador.
     Atributos:
         TAM_CASILLA (int): lado en píxeles de cada casilla (32).
         ANCHO_PANEL (int): ancho en píxeles del panel lateral (250).
@@ -866,6 +873,7 @@ class PantallaArena(Pantalla):
         tecla_escape (str): 'volver'; ESC sale de la arena.
         mapa (MapaArena): escenario que se dibuja.
         fuente_grande (pygame.font.Font): fuente de tamaño 48 para el temporizador.
+        control_entrada (acciones.ControlEntrada): dispositivo de entrada local seleccionado.
         _partida (Partida) y _ultimo (int): última partida leída y momento de la lectura.
         _musica (Optional[pygame.mixer.Sound]): música en reproducción, o None.
     """
@@ -888,6 +896,54 @@ class PantallaArena(Pantalla):
         self.fuente_grande = pygame.font.SysFont(None, 48)
         self._partida, self._ultimo = ctx.partida.obtener_partida(), pygame.time.get_ticks()
         self._musica: Optional[pygame.mixer.Sound] = None
+        acciones.iniciar()
+        self.control_entrada = acciones.ControlEntrada()
+        self._ultimo_movimiento = -self.INTERVALO_MOVIMIENTO_MS
+
+    INTERVALO_MOVIMIENTO_MS = 150
+
+    def _alternar_control(self) -> None:
+        if self.control_entrada.modo == acciones.MODO_TECLADO:
+            self.control_entrada.seleccionar(acciones.MODO_GAMEPAD)
+            self.exito(f"Gamepad seleccionado: {self.control_entrada.nombre_gamepad}")
+        else:
+            self.control_entrada.seleccionar(acciones.MODO_TECLADO)
+            self.exito("Teclado seleccionado.")
+
+    def botones(self) -> List[Boton]:
+        if self._partida.estado_juego and self._partida.estado_juego.get("status") == "finished":
+            return []
+        etiqueta = ("Usar teclado" if self.control_entrada.modo == acciones.MODO_GAMEPAD
+                    else "Usar gamepad")
+        x = self.mapa.columnas * self.TAM_CASILLA + 14
+        y = self.mapa.filas * self.TAM_CASILLA - 102
+        return [
+            Boton(
+                pygame.Rect(x, y, self.ANCHO_PANEL - 28, 34),
+                etiqueta,
+                self._alternar_control,
+            )
+        ]
+
+    def procesar_evento(self, evento: pygame.event.Event) -> None:
+        self.control_entrada.procesar_evento(evento)
+        if self.control_entrada.aviso:
+            self.mensaje, self.color_mensaje = self.control_entrada.aviso, ERROR
+            self.control_entrada.aviso = ""
+
+    def _procesar_movimiento(self) -> None:
+        juego = self._partida.estado_juego
+        if not juego or juego.get("status") not in {"running", "overtime"}:
+            return
+        direccion = self.control_entrada.direccion_actual()
+        ahora = pygame.time.get_ticks()
+        if direccion is None or ahora - self._ultimo_movimiento < self.INTERVALO_MOVIMIENTO_MS:
+            return
+        self._ultimo_movimiento = ahora
+        try:
+            self.ctx.partida.mover(direccion)
+        except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+            self.mensaje, self.color_mensaje = str(error), ERROR
 
     def ejecutar(self, superficie=None) -> str:
         """
@@ -930,6 +986,7 @@ class PantallaArena(Pantalla):
             None: la arena solo se cierra con ESC o al cerrar la ventana.
         """
         ahora = pygame.time.get_ticks()
+        self._procesar_movimiento()
         if ahora - self._ultimo >= self.INTERVALO_MS:
             self._ultimo, self._partida = ahora, self.ctx.partida.obtener_partida()
         return None
@@ -1079,7 +1136,10 @@ class PantallaArena(Pantalla):
             if juego.get("status") == "finished":
                 self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
             else:
-                self.texto(superficie, "WASD / flechas: mover", (x, superficie.get_height() - 44))
+                indicacion = ("Gamepad: stick / cruceta" if
+                              self.control_entrada.modo == acciones.MODO_GAMEPAD else
+                              "WASD / flechas: mover")
+                self.texto(superficie, indicacion, (x, superficie.get_height() - 44))
                 self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         else:
             for i, j in enumerate(p.jugadores):
@@ -1087,3 +1147,10 @@ class PantallaArena(Pantalla):
                 self.texto(superficie, j.nombre_usuario + (" (tú)" if j.id_usuario == self.ctx.id_usuario else ""),
                            (x + 36, 281 + i * 34))
             self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
+        if self.mensaje:
+            mensaje = self.mensaje
+            while self.fuente_chica.size(mensaje)[0] > self.ANCHO_PANEL - 28:
+                mensaje = mensaje[:-4] + "..."
+            self.texto(superficie, mensaje, (x, superficie.get_height() - 130),
+                       self.fuente_chica, self.color_mensaje)
+        self.dibujar_botones(superficie)
