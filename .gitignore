@@ -1,1 +1,12 @@
+# Secretos
 .env
+firebase-admin.json
+*adminsdk*.json
+
+# Generados
+.venv/
+data/
+html/
+__pycache__/
+**/__pycache__/
+*.py[cod]

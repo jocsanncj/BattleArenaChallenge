@@ -1,0 +1,11 @@
+{
+  "configuracion": {
+    "modo_fin": "tiempo",
+    "minutos_fin": 5,
+    "puntos_fin": 20,
+    "segundos_congelacion": 3
+  },
+  "estado": "esperando",
+  "iniciada_en": null,
+  "jugadores": []
+}

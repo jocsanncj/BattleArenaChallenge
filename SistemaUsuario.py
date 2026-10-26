@@ -1,195 +1,173 @@
-import smtplib
-import json
-import secrets
-import hashlib
-import getpass
-import os
-import hmac
-from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
-from usuario import Usuario
-load_dotenv(Path(__file__).resolve().parent / ".env")
-ARCHIVO_USUARIOS = Path(__file__).resolve().parent / "DatosUser.json"
+"""Capa de casos de uso del cliente: registro, login, verificación y recuperación.
 
-def enviar_correo_smtp(correo_destino: str):
-    remitente = "proyectomodelado4@gmail.com"
-    password_aplicacion = os.getenv("GMAIL_APP_PASSWORD")
-    if not password_aplicacion:
-        print("Configura GMAIL_APP_PASSWORD en el archivo .env del proyecto.")
-        return False
-    msg = MIMEMultipart()
-    msg['From'] = remitente
-    msg['To'] = correo_destino
-    msg['Subject'] = "Código de Verificación"
-    codigo = f"{secrets.randbelow(1_000_000):06}"
-    cuerpo = f"Hola, tu código de verificación es: {codigo}"
-    msg.attach(MIMEText(cuerpo, 'plain'))
-    etapa = "conectando por SMTP seguro"
-    try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
-            etapa = "autenticando la cuenta de Gmail"
-            server.login(remitente, password_aplicacion)
-            etapa = "enviando el correo"
-            server.send_message(msg)
-            etapa = "cerrando la conexión SMTP"
-    except (smtplib.SMTPException, OSError) as e:
-        print(f"Error al {etapa} ({type(e).__name__}): {e}")
-        return False
-    print(f"Correo enviado con éxito a {correo_destino}")
-    while True:
-        verificacion = input("Escribe el código que se envió: ").strip()
-        if verificacion == codigo:
-            return True
-        print("Código incorrecto. Inténtalo de nuevo.")
+Capas:  Escenas (UI)  ->  ServicioAuth (este archivo)  ->  ClientesHttp (Firebase y servidor)
+"""
 
-def creacion_usuario():
-    print("Bienvenido :D")
-    while True:
-        eleccion = int(input("Elige 1 para crear usuario o 2 para iniciar sesión: ").strip())
-        if eleccion == 1:
+import re
+from dataclasses import dataclass
+from typing import Protocol
+
+from ClientesHttp import (AuthError, ClienteServidor, CorreoPendiente,CredencialesInvalidas, FirebaseAuth)
+
+# ------------------------------------------- abstracciones (Inversión de dependencias)
+class ProveedorIdentidad(Protocol):
+    def registrar(self, correo: str, password: str) -> dict: ...
+    def iniciar_sesion(self, correo: str, password: str) -> dict: ...
+    def renovar(self, refresh_token: str) -> dict: ...
+    def datos_cuenta(self, id_token: str) -> dict: ...
+    def poner_nombre(self, id_token: str, nombre: str) -> None: ...
+    def enviar_verificacion(self, id_token: str) -> None: ...
+    def enviar_recuperacion(self, correo: str) -> None: ...
+
+
+class ApiPerfiles(Protocol):
+    def nombre_disponible(self, nombre: str) -> bool: ...
+    def correo_de(self, nombre: str) -> str | None: ...
+    def guardar_perfil(self, token: str, nombre: str) -> dict: ...
+    def obtener_perfil(self, token: str) -> dict: ...
+
+
+# ------------------------------------------------------ dominio y servicio
+@dataclass
+class Sesion:
+    id_token: str
+    refresh_token: str
+    email: str
+    nombre: str | None = None
+
+
+def validar_registro(nombre: str, correo: str, password: str, confirmacion: str) -> None:
+    """Reglas mínimas del registro (CA-01.4)."""
+    if not nombre or len(nombre) > 40:
+        raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
+    if "@" in nombre:
+        raise ValueError("El nombre de usuario no puede contener '@'.")
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo):
+        raise ValueError("El formato del correo no es válido.")
+    if len(password) < 8 or not any(c.isalpha() for c in password) \
+            or not any(c.isdigit() for c in password):
+        raise ValueError("La contraseña debe tener al menos 8 caracteres, con letras y números.")
+    if password != confirmacion:
+        raise ValueError("Las contraseñas no coinciden.")
+
+
+class ServicioAuth:
+    """Casos de uso de cuenta. Recibe sus dependencias, así se puede probar sin red."""
+
+    def __init__(self, identidad: ProveedorIdentidad, servidor: ApiPerfiles):
+        self._identidad = identidad
+        self._servidor = servidor
+        self._sesion: Sesion | None = None
+
+    # -- sesión
+    def _abrir_sesion(self, respuesta: dict) -> None:
+        try:
+            self._sesion = Sesion(respuesta["idToken"], respuesta["refreshToken"], respuesta["email"])
+        except KeyError as error:
+            raise AuthError("Firebase no devolvió una sesión completa.") from error
+
+    def _token(self, renovar: bool = False) -> str:
+        if self._sesion is None:
+            raise AuthError("Inicia sesión para continuar.")
+        if renovar:
+            nuevo = self._identidad.renovar(self._sesion.refresh_token)
+            self._sesion.id_token, self._sesion.refresh_token = nuevo["idToken"], nuevo["refreshToken"]
+        return self._sesion.id_token
+
+    def _resolver_correo(self, identificador: str) -> str | None:
+        """Acepta usuario o correo y devuelve el correo (None si el usuario no existe)."""
+        identificador = identificador.strip()
+        return identificador if "@" in identificador else self._servidor.correo_de(identificador)
+
+    # -- casos de uso
+    def registrar(self, nombre, password, confirmacion, correo) -> dict:
+        nombre, correo = nombre.strip(), correo.strip()
+        validar_registro(nombre, correo, password, confirmacion)
+        if not self._servidor.nombre_disponible(nombre):
+            raise ValueError("Ese nombre de usuario ya está en uso.")
+        self._abrir_sesion(self._identidad.registrar(correo, password))
+        self._identidad.poner_nombre(self._token(), nombre)
+        self._identidad.enviar_verificacion(self._token())
+        self._servidor.guardar_perfil(self._token(), nombre)
+        return {"verification_required": True, "verification_sent": True}
+
+    def autenticar(self, identificador, password) -> dict | None:
+        correo = self._resolver_correo(identificador)
+        if correo is None:
+            return None
+        try:
+            self._abrir_sesion(self._identidad.iniciar_sesion(correo, password))
+        except CredencialesInvalidas:
+            return None
+        cuenta = self._identidad.datos_cuenta(self._token())
+        if cuenta.get("emailVerified") is not True:
+            raise CorreoPendiente("Tu correo todavía no está verificado. Revisa tu bandeja de entrada.")
+        nombre = (cuenta.get("displayName") or "").strip() or correo.partition("@")[0]
+        perfil = self._servidor.guardar_perfil(self._token(), nombre)
+        self._sesion.nombre = perfil.get("name", nombre)
+        return perfil
+
+    def obtener_perfil(self) -> dict:
+        return self._servidor.obtener_perfil(self._token(renovar=True))
+
+    def reenviar_verificacion(self, identificador) -> None:
+        if self._sesion is None:
+            raise AuthError("Inicia sesión con esa cuenta para reenviar la verificación.")
+        if (self._resolver_correo(identificador) or "").casefold() != self._sesion.email.casefold():
+            raise ValueError("El correo no coincide con la cuenta activa.")
+        self._identidad.enviar_verificacion(self._token(renovar=True))
+
+    def recuperar_contrasena(self, identificador) -> None:
+        if not identificador.strip():
+            raise ValueError("Escribe tu usuario o correo electrónico.")
+        correo = self._resolver_correo(identificador)
+        if correo:
             try:
-                with open(ARCHIVO_USUARIOS, "r", encoding="utf-8") as archivo:
-                    datos = json.load(archivo)
-            except FileNotFoundError:
-                datos = {"usuarios": {}}
-            usuarios = datos.setdefault("usuarios", {})
-            while True:
-                nombre_user = input("Escribe tu nombre dentro del juego: ").strip()
-                if not nombre_user:
-                    print("El nombre no puede estar vacío.")
-                    continue
-                if nombre_user in usuarios:
-                    print("Ese nombre ya existe. Elige otro.")
-                    continue
-                break
-            while True:
-                password = getpass.getpass("Escribe tu contraseña: ")
-                confirmacion = getpass.getpass("Confirma tu contraseña: ")
-                if password == confirmacion:
-                    break
-                print("Las contraseñas no coinciden. Inténtalo de nuevo.")
-            salt = secrets.token_bytes(16)
-            hash_password = hashlib.pbkdf2_hmac(
-                "sha256",
-                password.encode("utf-8"),
-                salt,
-                600_000,
-            ).hex()
-            while True:
-                correo_user = input("Escribe tu correo electrónico: ").strip()
-                if not correo_user:
-                    print("El correo no puede estar vacío.")
-                    continue
-                correo_normalizado = correo_user.casefold()
-                correo_existe = any(
-                    isinstance(registro, dict)
-                    and isinstance(registro.get("email"), str)
-                    and registro["email"].strip().casefold() == correo_normalizado
-                    for registro in usuarios.values()
-                )
-                if correo_existe:
-                    print("Ese correo ya está registrado. Escribe otro.")
-                    continue
-                break
-            usuario = Usuario(nombre_user, salt.hex(), hash_password, correo_user)
-            usuarios[usuario.name] = usuario.como_diccionario()
-            with open(ARCHIVO_USUARIOS, "w", encoding="utf-8") as archivo:
-                json.dump(datos, archivo, ensure_ascii=False, indent=4)
-            print(f"Usuario {usuario.name} creado.")
-            print("Para jugar debes verificar el correo")
-            while True:
-                ver_correo = input("¿Quieres verificarlo ahora? Escribe S o N: ").strip().upper()
-                if ver_correo in ("S", "N"):
-                    break
-                print("Respuesta inválida. Escribe S o N.")
-            if ver_correo == "S":
-                if enviar_correo_smtp(usuario.email):
-                    usuario.verificacion()
-                    usuarios[usuario.name] = usuario.como_diccionario()
-                    with open(ARCHIVO_USUARIOS, "w", encoding="utf-8") as archivo:
-                        json.dump(datos, archivo, ensure_ascii=False, indent=4)
-                    print("Correo verificado.")
-                else:
-                    print("No se pudo verificar el correo.")
-            break
-        elif eleccion == 2:
-            inicio_sesion()
-            return
-        else:
-            print("Número incorrecto")
-            continue
+                self._identidad.enviar_recuperacion(correo)
+            except CredencialesInvalidas:
+                pass  # respuesta genérica: no revela si la cuenta existe
 
-def inicio_sesion():
-    try:
-        with open(ARCHIVO_USUARIOS, "r", encoding="utf-8") as archivo:
-            datos = json.load(archivo)
-    except FileNotFoundError:
-        print("Todavía no hay usuarios registrados.")
-        return
-    usuarios = datos.get("usuarios", {})
-    while True:
-        nombre_login = input(
-            "Escribe tu nombre de usuario (o deja vacío para volver): "
-        ).strip()
-        if not nombre_login:
-            return
-        registro = usuarios.get(nombre_login)
-        if isinstance(registro, dict):
-            break
-        print("Usuario no encontrado. Inténtalo de nuevo.")
-    while True:
-        contador = 0
-        while contador < 3:
-            password = getpass.getpass("Escribe la contraseña: ")
-            salt = bytes.fromhex(registro["salt"])
-            hash_ingresado = hashlib.pbkdf2_hmac(
-                "sha256",
-                password.encode("utf-8"),
-                salt,
-                600_000,
-            ).hex()
-            if hmac.compare_digest(hash_ingresado, registro["hash_password"]):
-                print("Inicio de sesión correcto.")
-                return
-            contador += 1
-            print(f"Contraseña incorrecta. Intentos: {contador}/3")
-        while True:
-            eleccion_password = input(
-                "¿Quieres recuperar tu contraseña por correo? Escribe S o N: "
-            ).strip().upper()
-            if eleccion_password in ("S", "N"):
-                break
-            print("Opción inválida. Escribe S o N.")
-        if eleccion_password == "N":
-            print("Puedes volver a intentar la contraseña.")
-            continue
-        correo = registro.get("email")
-        if not isinstance(correo, str) or not correo:
-            print("La cuenta no tiene un correo válido para recuperación.")
-            return
-        if not enviar_correo_smtp(correo):
-            print("No se pudo verificar el correo; la contraseña no fue modificada.")
-            return
-        while True:
-            nueva_password = getpass.getpass("Escribe la nueva contraseña: ")
-            confirmacion = getpass.getpass("Confirma la nueva contraseña: ")
-            if nueva_password == confirmacion:
-                break
-            print("Las contraseñas no coinciden. Inténtalo de nuevo.")
-        nuevo_salt = secrets.token_bytes(16)
-        nuevo_hash = hashlib.pbkdf2_hmac(
-            "sha256",
-            nueva_password.encode("utf-8"),
-            nuevo_salt,
-            600_000,
-        ).hex()
-        registro["salt"] = nuevo_salt.hex()
-        registro["hash_password"] = nuevo_hash
-        with open(ARCHIVO_USUARIOS, "w", encoding="utf-8") as archivo:
-            json.dump(datos, archivo, ensure_ascii=False, indent=4)
-        print("Contraseña restablecida. Ya puedes iniciar sesión con la nueva contraseña.")
+    def cerrar_sesion(self) -> None:
+        self._sesion = None
 
-if __name__ == "__main__":
-    creacion_usuario()
+    def usuario_actual(self) -> str | None:
+        return self._sesion.nombre if self._sesion else None
+
+
+# Instancia por defecto con los nombres que ya importa Escenas.py.
+_servicio = ServicioAuth(FirebaseAuth(), ClienteServidor())
+registrar_usuario = _servicio.registrar
+autenticar_usuario = _servicio.autenticar
+obtener_usuario = _servicio.obtener_perfil
+reenviar_verificacion = _servicio.reenviar_verificacion
+solicitar_recuperacion = _servicio.recuperar_contrasena
+cerrar_sesion = _servicio.cerrar_sesion
+usuario_actual = _servicio.usuario_actual
+
+# CAMBIO ONLINE: puente de infraestructura para los repositorios del juego.
+_ultimo_refresh_juego = 0.0
+
+def token_para_juego() -> str:
+    """Devuelve un token de sesión; lo renueva como máximo cada 45 minutos para no saturar Firebase."""
+    import time
+    global _ultimo_refresh_juego
+    ahora = time.monotonic()
+    renovar = ahora - _ultimo_refresh_juego >= 45 * 60
+    token = _servicio._token(renovar=renovar)
+    if renovar:
+        _ultimo_refresh_juego = ahora
+    return token
+
+def cliente_juego() -> ClienteServidor:
+    """Devuelve el adaptador HTTP compartido con el que se consulta el servidor Docker."""
+    return _servicio._servidor
+
+def id_usuario_actual() -> int:
+    """Genera un identificador entero estable a partir del UID de Firebase para el modelo legado."""
+    import hashlib
+    token = token_para_juego()
+    cuenta = _servicio._identidad.datos_cuenta(token)
+    uid = str(cuenta.get("localId", ""))
+    if not uid:
+        raise AuthError("No se pudo identificar la cuenta para jugar online.")
+    return int.from_bytes(hashlib.sha256(uid.encode("utf-8")).digest()[:4], "big") & 0x7fffffff

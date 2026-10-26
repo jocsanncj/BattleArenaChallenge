@@ -1,14 +1,24 @@
+# Importa Pygame para crear la fuente utilizada por las pantallas.
 import pygame  # pyright: ignore[reportMissingImports]
+
+# Importa el ciclo de vida de la ventana principal.
 from Window import Window
+# Importa la escena inicial con las opciones de bienvenida.
 from Escenas import MainMenuScene
-if __name__ == "__main__":
-    # 1. Instanciar la ventana
-    app = Window(width=800, height=500, title="Proyecto Modular Pygame")
 
-    # 2. Crear fuentes y escenas
-    fuente = pygame.font.SysFont("Segoe UI", 24)
-    menu_principal = MainMenuScene(fuente)
 
-    # 3. Asignar la escena e iniciar
-    app.set_scene(menu_principal)
+def main():
+    """Inicia la aplicación gráfica y deja que Window gestione el ciclo de escenas."""
+    # CAMBIO ONLINE: la arena necesita espacio para el mapa y el panel lateral.
+    app = Window(width=1000, height=600, title="Battle Arena Challenge")
+    # Crea la fuente que compartirán los controles y mensajes de la interfaz.
+    fuente = pygame.font.SysFont("Segoe UI", 20)
+    # Construye la escena inicial y la asigna como pantalla activa.
+    app.set_scene(MainMenuScene(fuente))
+    # Entra en el ciclo de eventos hasta que el jugador cierre la ventana.
     app.run()
+
+
+# Evita iniciar la interfaz si este módulo se importa desde otro archivo.
+if __name__ == "__main__":
+    main()
