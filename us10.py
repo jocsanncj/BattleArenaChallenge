@@ -24,8 +24,11 @@ from uuid import uuid4
 
 from us15 import Scoreboard
 from us16 import GameRules
+import acciones
+
 import pygame
 
+acciones.iniciar()  #activa las funciones de movimiento y sonido al presionar la tecla E
 
 @dataclass
 class Player:
