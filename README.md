@@ -14,14 +14,14 @@ La documentación de arquitectura y los diagramas compatibles con Azure DevOps W
 Jugador
   ├─ Teclado o gamepad opcional
   │    └─ Pygame/SDL (acciones.py) ──► Cliente Pygame
-  └─ Cliente Pygame (main.py, Escenas.py, interfaz.py)
-       ├─ ServicioAuth (SistemaUsuario.py)
-       │    └─ FirebaseAuth (ClientesHttp.py) ──HTTPS──► Firebase Authentication
-       └─ ClienteServidor (ClientesHttp.py) ──HTTP──► Servidor Flask en Docker
+  └─ Cliente Pygame (frontend/)
+       ├─ ServicioAuth (frontend/auth/service.py)
+       │    └─ FirebaseAuth (frontend/auth/http_client.py) ──HTTPS──► Firebase Authentication
+       └─ ClienteServidor (frontend/auth/http_client.py) ──HTTP──► Servidor Flask en Docker
             ├─ valida tokens con Firebase Admin
             ├─ guarda perfiles en SQLite (/data/juego.db)
             └─ gestiona sala, movimientos, puntajes y resultado
-                 (servidor.py, us10.py, us15.py, us16.py)
+                 (server/, shared/game/)
                  └─ devuelve el estado para que el cliente dibuje la partida
 ```
 
@@ -61,7 +61,7 @@ El integrante encargado de Firebase debe entregar los valores y credenciales nec
 
 ### `.env` (cada computadora que ejecuta el juego)
 
-En la carpeta del proyecto —la misma que contiene `main.py`— crea un archivo llamado exactamente `.env`. En Windows, al guardarlo con el Bloc de notas selecciona **Tipo: Todos los archivos**, para que no termine llamándose `.env.txt`.
+En la carpeta raíz del proyecto crea un archivo llamado exactamente `.env`. En Windows, al guardarlo con el Bloc de notas selecciona **Tipo: Todos los archivos**, para que no termine llamándose `.env.txt`.
 
 ```dotenv
 FIREBASE_API_KEY=PEGA_AQUI_LA_CLAVE_ENTREGADA
@@ -221,14 +221,14 @@ Antes de abrirlo, confirma que el servidor está encendido.
 
   ```powershell
   cd $HOME\BattleArenaChallenge
-  .venv\Scripts\python.exe main.py
+  .venv\Scripts\python.exe -m frontend
   ```
 
 - Linux Mint: abre Terminal y ejecuta:
 
   ```bash
   cd ~/BattleArenaChallenge
-  .venv/bin/python main.py
+  .venv/bin/python -m frontend
   ```
 
 Se abrirá la ventana del juego con las opciones **Iniciar sesión** y **Crear cuenta**.
@@ -307,23 +307,58 @@ Linux Mint:  .venv/bin/python -m unittest discover -s tests -v
 
 ## 11. Estructura del proyecto
 
+El código está agrupado por capa. El cliente vive en `frontend/`, la API en `server/`,
+la persistencia del perfil en `backend/` y las reglas/modelos compartidos en `shared/`.
+
+```text
+.
+├── backend/                 # Persistencia SQLite de perfiles
+├── frontend/
+│   ├── __main__.py          # Inicio con `python -m frontend`
+│   ├── app.py               # Arranque del cliente Pygame
+│   ├── auth/                # Casos de uso y clientes HTTP/Firebase
+│   ├── account/             # Menú, cuenta y flujo online
+│   ├── ui/                  # Pantallas del juego
+│   ├── components/          # Componentes visuales compartidos
+│   ├── actions.py           # Teclado y gamepad
+│   ├── repositories.py      # Adaptadores cliente-servidor del juego
+│   ├── results.py           # Ventana de resultado
+│   └── window.py            # Ciclo de vida de la ventana Pygame
+├── server/
+│   ├── __main__.py          # Inicio con `python -m server`
+│   └── app.py               # API Flask
+├── shared/
+│   ├── data.py              # Modelos y contratos/repositorios JSON
+│   ├── domain/              # Reglas de avatar, arena y partida
+│   └── game/                # Estado, puntaje y reglas de la arena
+├── tests/                   # Pruebas automáticas
+├── Dockerfile
+└── compose.yaml
+```
+
 | Archivo o carpeta | Para qué sirve |
 |---|---|
-| `main.py`, `Window.py`, `Boton.py` | Arranque y base de la interfaz Pygame |
-| `Escenas.py` | Pantallas del juego (bienvenida, registro, login, perfil...) |
-| `SistemaUsuario.py` | Casos de uso de cuenta (`ServicioAuth`) |
-| `ClientesHttp.py` | Conexión con Firebase y con el servidor |
-| `acciones.py` | Lectura de controles del teclado y gamepad |
+| `frontend/` | Cliente Pygame y sus pantallas |
+| `frontend/auth/` | Casos de uso de cuenta y conexiones HTTP |
+| `frontend/account/` | Registro, inicio de sesión, perfil y flujo online |
+| `frontend/ui/` | Pantallas de avatar, sala, configuración y arena |
+| `frontend/repositories.py` | Repositorios que conectan servicios del cliente con la API |
+| `frontend/actions.py` | Lectura de controles del teclado y gamepad |
 | `Media/Efecto.mp3` | Sonido reproducido al pulsar el botón de acción del gamepad o la tecla `E` |
-| `servidor.py` | API del servidor |
-| `us10.py`, `us15.py`, `us16.py` | Estado de arena, puntaje y reglas ejecutadas por el servidor |
-| `us17.py` | Ventana de resultado que se abre en el cliente |
+| `server/app.py` | API Flask del juego y perfiles |
+| `shared/domain/` | Reglas de avatar, mapa, configuración y sala |
+| `shared/game/` | Estado de arena, puntaje y reglas de partida |
+| `shared/data.py` | Modelos y almacenamiento JSON local |
 | `backend/repository.py` | Base de datos SQLite (tablas `jugadores`, `partidas`, `logros`) |
 | `backend/jugador.py` | Clase `Jugador` (datos y estadísticas del jugador) |
 | `tests/` | Pruebas automáticas |
 | `tests/test_gamepad_input.py` | Pruebas del teclado y la entrada del gamepad |
-| `Dockerfile`, `compose.yaml` | Contenedor del servidor |
+| `Dockerfile`, `compose.yaml` | Construcción y ejecución del servidor |
 | `Doxyfile` | Configuración de la documentación del código |
+
+Para agregar una pantalla, usa `frontend/ui/` o `frontend/account/`. Las reglas compartidas
+van en `shared/domain/` o `shared/game/`; los endpoints nuevos, en `server/app.py`; la
+persistencia del perfil, en `backend/`. El cliente se inicia con `python -m frontend`.
 
 ---
 
@@ -353,7 +388,7 @@ Linux Mint:  .venv/bin/python -m unittest discover -s tests -v
 - Ramas: `main` (estable) ← `develop` (integración) ← `feature/<nombre>` (cada tarea).
 - Trabaja en tu rama `feature/...`, haz commits pequeños y abre un **Pull Request** hacia `develop`.
 - Antes de abrir el Pull Request, corre las pruebas (sección 9).
-- No hagas commit de `.env`, `firebase-admin.json` ni de la carpeta `data/`.
+- No hagas commit de `.env`, `firebase-admin.json`, `.venv/`, `data/` ni de la documentación generada en `html/`.
 
 ---
 

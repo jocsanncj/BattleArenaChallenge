@@ -10,11 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
-COPY servidor.py /app/servidor.py
 COPY backend /app/backend
-COPY datos.py logica.py us10.py us15.py us16.py /app/
+COPY server /app/server
+COPY shared /app/shared
 
 EXPOSE 8000
 VOLUME ["/data"]
 
-CMD ["python", "/app/servidor.py"]
+CMD ["python", "-m", "server"]

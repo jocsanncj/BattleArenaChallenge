@@ -5,10 +5,10 @@ import time
 import unittest
 from unittest.mock import patch
 
-import servidor
+from server import app as servidor
 from backend.repository import SQLiteRepository
-from datos import RepositorioPartidaJson
-from logica import ServicioPartida
+from shared.data import RepositorioPartidaJson
+from shared.domain import ServicioPartida
 
 
 class GameServerIntegrationTests(unittest.TestCase):

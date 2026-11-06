@@ -7,9 +7,8 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
 import pygame
 
-from acciones import ControlEntrada, MODO_GAMEPAD, MODO_TECLADO
-from us10 import MultiplayerArena
-from us110 import MultiplayerArena as MultiplayerArenaCompat
+from frontend.actions import ControlEntrada, MODO_GAMEPAD, MODO_TECLADO
+from shared.game.arena import MultiplayerArena
 
 
 class GamepadInputTests(unittest.TestCase):
@@ -19,8 +18,8 @@ class GamepadInputTests(unittest.TestCase):
     def tearDown(self):
         pygame.quit()
 
-    def test_us110_reexports_the_us10_arena(self):
-        self.assertIs(MultiplayerArenaCompat, MultiplayerArena)
+    def test_shared_game_arena_exposes_server_gameplay(self):
+        self.assertTrue(callable(MultiplayerArena))
 
     def test_keyboard_direction_tracks_key_press_and_release(self):
         control = ControlEntrada()
@@ -32,7 +31,7 @@ class GamepadInputTests(unittest.TestCase):
         self.assertIsNone(control.direccion_actual())
 
     def test_gamepad_mode_requires_a_connected_controller(self):
-        with patch("acciones.pygame.joystick.get_count", return_value=0):
+        with patch("frontend.actions.pygame.joystick.get_count", return_value=0):
             control = ControlEntrada()
             with self.assertRaisesRegex(ValueError, "No se detectó un gamepad"):
                 control.seleccionar(MODO_GAMEPAD)
@@ -47,8 +46,8 @@ class GamepadInputTests(unittest.TestCase):
         joystick.get_axis.side_effect = [0.0, 0.0]
 
         with (
-            patch("acciones.pygame.joystick.get_count", return_value=1),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
+            patch("frontend.actions.pygame.joystick.get_count", return_value=1),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
         ):
             control = ControlEntrada()
             control.seleccionar(MODO_GAMEPAD)
@@ -69,9 +68,9 @@ class GamepadInputTests(unittest.TestCase):
         joystick.get_instance_id.return_value = 7
         sound = Mock()
         with (
-            patch("acciones.pygame.joystick.get_count", return_value=1),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
-            patch("acciones._sonido", sound),
+            patch("frontend.actions.pygame.joystick.get_count", return_value=1),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
+            patch("frontend.actions._sonido", sound),
         ):
             control = ControlEntrada()
             control.seleccionar(MODO_GAMEPAD)
@@ -90,9 +89,9 @@ class GamepadInputTests(unittest.TestCase):
         joystick.get_instance_id.return_value = 7
         sound = Mock()
         with (
-            patch("acciones.pygame.joystick.get_count", return_value=1),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
-            patch("acciones._sonido", sound),
+            patch("frontend.actions.pygame.joystick.get_count", return_value=1),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
+            patch("frontend.actions._sonido", sound),
         ):
             control = ControlEntrada()
             control.procesar_evento(
@@ -110,8 +109,8 @@ class GamepadInputTests(unittest.TestCase):
         joystick.get_instance_id.return_value = 7
         counts = iter((1, 0))
         with (
-            patch("acciones.pygame.joystick.get_count", side_effect=lambda: next(counts)),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
+            patch("frontend.actions.pygame.joystick.get_count", side_effect=lambda: next(counts)),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
         ):
             control = ControlEntrada()
             control.seleccionar(MODO_GAMEPAD)
