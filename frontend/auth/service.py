@@ -177,3 +177,5 @@ def id_usuario_actual() -> int:
     if not uid:
         raise AuthError("No se pudo identificar la cuenta para jugar online.")
     return int.from_bytes(hashlib.sha256(uid.encode("utf-8")).digest()[:4], "big") & 0x7fffffff
+def obtener_ranking():
+    return cliente_juego().obtener_ranking()

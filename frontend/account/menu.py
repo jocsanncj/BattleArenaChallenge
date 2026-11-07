@@ -10,6 +10,7 @@ from frontend.auth.service import (
     reenviar_verificacion,
     registrar_usuario,
     solicitar_recuperacion,
+    obtener_ranking
 )
 from frontend.components.button import Boton
 from .base import (ERROR, FONDO, TEXTO, TEXTO_SECUNDARIO, BaseScene, CampoTexto)
@@ -40,6 +41,7 @@ class MainMenuScene(BaseScene):
         self.profile_scroll = 0
         # Crea los botones y campos iniciales para la pantalla de bienvenida.
         self._configure_page()
+        self.ranking = []
 
     ## @brief Crea y registra un botón en la colección de la página activa.
     ## @param x Coordenada horizontal del control.
@@ -110,9 +112,13 @@ class MainMenuScene(BaseScene):
         elif self.page == "menu":
             self._button(250, 320, 400, "Jugar online", self._abrir_juego)  # CAMBIO ONLINE: entrada a escenas del juego
             self._button(250, 375, 400, "Ver perfil", self._abrir_perfil)
-            self._button(355, 435, 190, "Cerrar sesión", self._cerrar_sesion)
+            self._button(250,430,400, "Ver ranking", self._abrir_ranking)
+            self._button(355, 485, 190, "Cerrar sesión", self._cerrar_sesion)
         elif self.page == "profile":
             self._button(355, 535, 190, "Volver al menú", lambda: self._set_page("menu"))
+        elif self.page == "ranking":
+            self._button(250, 535, 190, "Actualizar", self._abrir_ranking)
+            self._button(460, 535, 190, "Volver", lambda: self._set_page("menu"))
 
     ## @brief Guarda el nombre y navega al menú luego de autenticar.
     ## @param nombre Nombre de la cuenta que inició sesión.
@@ -293,6 +299,7 @@ class MainMenuScene(BaseScene):
             f"Derrotas: {statistics.get('losses', 0)}  |  "
             f"Empates: {statistics.get('draws', 0)}",
             f"Ranking: {ranking if ranking is not None else 'Sin clasificación'}",
+            f"Puntos acumulados: {statistics.get('points_accumulated', 0)}",
             "",
             "Logros",
         ]
@@ -498,6 +505,8 @@ class MainMenuScene(BaseScene):
             )
         elif self.page == "profile":
             self._draw_profile(surface)
+        elif self.page == "ranking":
+            self._draw_ranking(surface)
 
         # Dibuja los campos y botones que se configuraron para esta pantalla.
         for field in self.fields:
@@ -510,3 +519,25 @@ class MainMenuScene(BaseScene):
             "recovery_sent",
         ):
             self._draw_message(surface, self.status, 555, self.small_font, ERROR)
+    def _abrir_ranking(self):
+        try:
+            self.ranking = obtener_ranking()
+            self._set_page("ranking")
+        except (OSError, RuntimeError, ValueError) as error:
+            self.status = str(error)
+    def _draw_ranking(self, surface):
+        self._draw_centered(surface, "Ranking global", 70)
+        viewport = pygame.Rect(80, 120, 740, 390)
+        surface.set_clip(viewport)
+        if not self.ranking:
+            lines = ["Todavía no hay partidas registradas."]
+        else:
+            lines = [
+                f"{fila['position']}. {fila['name']} — "
+                f"{fila['points']} puntos — {fila['wins']} victorias"
+                for fila in self.ranking
+            ]
+        for index, line in enumerate(lines):
+            rendered = self.detail_font.render(line, True, TEXTO)
+            surface.blit(rendered, (viewport.x + 12, viewport.y + 8 + index * 24))
+        surface.set_clip(None)

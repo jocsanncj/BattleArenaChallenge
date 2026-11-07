@@ -20,12 +20,14 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.old_users = servidor._GAME_USERS
         self.old_player_ids = servidor._GAME_PLAYER_IDS
         self.old_move_times = servidor._MOVE_TIMES
+        self.old_firebase_uids = servidor._GAME_FIREBASE_UIDS.copy()
         servidor.repo = SQLiteRepository(Path(self.temp.name) / "test.db")
         servidor._GAME_FILE = Path(self.temp.name) / "game.json"
         servidor._GAME_ARENA = None
         servidor._GAME_USERS = {}
         servidor._GAME_PLAYER_IDS = {}
         servidor._MOVE_TIMES = {}
+        servidor._GAME_FIREBASE_UIDS.clear()
         self.identities = {
             "token-one": {"uid": "user-one", "email": "one@example.test", "email_verified": True},
             "token-two": {"uid": "user-two", "email": "two@example.test", "email_verified": True},
@@ -53,6 +55,8 @@ class GameServerIntegrationTests(unittest.TestCase):
         servidor._GAME_USERS = self.old_users
         servidor._GAME_PLAYER_IDS = self.old_player_ids
         servidor._MOVE_TIMES = self.old_move_times
+        servidor._GAME_FIREBASE_UIDS.clear()
+        servidor._GAME_FIREBASE_UIDS.update(self.old_firebase_uids)
         self.temp.cleanup()
 
     @staticmethod
@@ -111,6 +115,83 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertEqual(len(shared["players"]), 2)
         expected_user_id = int.from_bytes(hashlib.sha256(b"user-one").digest()[:4], "big") & 0x7fffffff
         self.assertEqual(shared["players"][0]["user_id"], expected_user_id)
+
+    def test_finished_match_is_saved_once_and_returned_in_ranking_and_profile(self):
+        config = {
+            "modo_fin": "puntos",
+            "minutos_fin": 1,
+            "puntos_fin": 1,
+            "segundos_congelacion": 3,
+        }
+        for client, token, avatar in (
+            (self.client_one, "token-one", "avatar_1"),
+            (self.client_two, "token-two", "avatar_2"),
+        ):
+            self.assertEqual(
+                client.put(
+                    "/api/game/avatar",
+                    json={"tipo": "predeterminado", "valor": avatar},
+                    headers=self._headers(token),
+                ).status_code,
+                200,
+            )
+        for client, token in (
+            (self.client_one, "token-one"),
+            (self.client_two, "token-two"),
+        ):
+            self.assertEqual(
+                client.post("/api/game/join", headers=self._headers(token)).status_code,
+                200,
+            )
+        self.assertEqual(
+            self.client_one.put(
+                "/api/game/config",
+                json=config,
+                headers=self._headers("token-one"),
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client_one.post(
+                "/api/game/start", headers=self._headers("token-one")
+            ).status_code,
+            200,
+        )
+
+        final = self.client_one.post(
+            "/api/game/move",
+            json={"direction": "right"},
+            headers=self._headers("token-one"),
+        )
+        self.assertEqual(final.status_code, 200)
+        self.assertEqual(final.json["state"]["status"], "finished")
+
+        repeated = self.client_two.get(
+            "/api/game/state", headers=self._headers("token-two")
+        )
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json["game"]["status"], "finished")
+
+        ranking = self.client_one.get("/api/ranking")
+        self.assertEqual(ranking.status_code, 200)
+        self.assertEqual(
+            ranking.json["ranking"],
+            [{"position": 1, "name": "JugadorUno", "points": 1, "wins": 1},
+             {"position": 2, "name": "JugadorDos", "points": 0, "wins": 0}],
+        )
+        profile = self.client_one.get(
+            "/api/profile", headers=self._headers("token-one")
+        )
+        self.assertEqual(profile.status_code, 200)
+        self.assertEqual(profile.json["user"]["statistics"]["matches_played"], 1)
+        self.assertEqual(profile.json["user"]["statistics"]["points_accumulated"], 1)
+        self.assertEqual(profile.json["user"]["match_history"][0]["result"], "victoria")
+
+        with servidor.repo._con() as con:
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM partidas").fetchone()[0],
+                2,
+            )
 
     def test_clients_cannot_replace_the_authoritative_game_state(self):
         self.client_one.post("/api/game/join", headers=self._headers("token-one"))

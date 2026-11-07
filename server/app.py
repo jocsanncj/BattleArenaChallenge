@@ -20,6 +20,7 @@ datos = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parents[1] / "data")
 datos.mkdir(parents=True, exist_ok=True)
 repo = SQLiteRepository(datos / "juego.db")
 _lock = threading.Lock()
+_GAME_FIREBASE_UIDS = {}
 
 
 def _firebase_app():
@@ -103,6 +104,10 @@ def guardar_perfil(claims):
     repo.crear(claims["uid"], nombre.strip(), claims["email"])
     return {"user": repo.obtener(claims["uid"], claims["email_verified"]).to_dict()}
 
+@app.get("/api/ranking")
+def obtener_ranking():
+    return jsonify(ranking=repo.obtener_ranking())
+
 # CAMBIO ONLINE: estado compartido de juego en el volumen Docker (/data).
 _GAME_FILE = datos / "partida_online.json"
 _GAME_LOCK = threading.RLock()
@@ -163,6 +168,21 @@ def _estado_arena():
     if _GAME_ARENA is None:
         return None
     estado = _GAME_ARENA.tick()
+    if estado.get("status") == "finished":
+        ganador_id = estado.get("winner_id")
+        participantes = []
+        for jugador in estado.get("players", []):
+            player_id = jugador["player_id"]
+            uid = _GAME_FIREBASE_UIDS.get(player_id)
+            if uid is None:
+                raise RuntimeError("No se encontró la cuenta de un participante.")
+            participantes.append({
+                "uid": uid,
+                "score": jugador["score"],
+                "result": "victoria" if player_id == ganador_id else "derrota",
+            })
+        repo.registrar_resultado_partida(estado["match_id"], participantes,
+            duracion_segundos=int(estado.get("elapsed_seconds", 0)))
     jugadores = []
     for jugador in estado.get("players", []):
         jugador["user_id"] = _GAME_PLAYER_IDS[jugador["player_id"]]
@@ -257,6 +277,7 @@ def unirse_partida_juego(claims):
     """Une al usuario autenticado a la sala; la identidad nunca se toma del cuerpo HTTP."""
     user_id, player_id, nombre = _validar_jugador(claims)
     with _GAME_LOCK:
+        _GAME_FIREBASE_UIDS[player_id] = claims["uid"]
         global _GAME_ARENA
         estado = _leer_estado_juego()
         partida = estado["partida"]

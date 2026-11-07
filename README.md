@@ -283,6 +283,13 @@ La partida se actualiza mediante consultas HTTP periódicas, por lo que no requi
 
 ## 9. Dónde viven los datos
 
+### Regla del ranking global
+
+El ranking suma los puntos de todas las partidas finalizadas y guardadas. Se ordena por
+puntos acumulados descendentes; en empate, por victorias descendentes y, si persiste,
+por nombre de usuario ascendente sin distinguir mayúsculas. El récord personal sigue
+siendo el puntaje más alto de una sola partida.
+
 | Dato | Dónde está | Cómo borrarlo |
 |---|---|---|
 | Correo, contraseña y estado "verificado" | **Firebase** (en la nube, compartido por todo el equipo) | Firebase Console → Authentication → Users → *Delete account* |
