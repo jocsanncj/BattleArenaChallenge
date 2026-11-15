@@ -101,7 +101,17 @@ class JuegoOnlineScene(BaseScene):
                 if juego and juego.get("status") == "finished":
                     match_id = juego.get("match_id")
                     if match_id and match_id != self._victory_match_id:
-                        launch_victory_window(juego)
+                        resultado = dict(juego)
+                        resultado["players"] = []
+                        for jugador in juego.get("players", []):
+                            participante = dict(jugador)
+                            eleccion = self.ctx.avatares.obtener_eleccion(
+                                jugador["user_id"]
+                            )
+                            if eleccion.tipo == "personalizado":
+                                participante["avatar_png"] = eleccion.valor
+                            resultado["players"].append(participante)
+                        launch_victory_window(resultado)
                         self._victory_match_id = match_id
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.screen.mensaje = str(error)

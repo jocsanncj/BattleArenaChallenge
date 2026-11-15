@@ -19,9 +19,7 @@ class PantallaSala(Pantalla):
         _partida (Partida): última copia leída de la partida.
         _ultimo (int): momento (en ms) de la última lectura.
     """
-
     INTERVALO_MS = 500
-
     def __init__(self, ctx: Contexto, aviso: str = ""):
         """
         Descripción:
@@ -40,21 +38,22 @@ class PantallaSala(Pantalla):
         self._partida, self._ultimo = ctx.partida.obtener_partida(), pygame.time.get_ticks()
         if aviso:
             self.mensaje, self.color_mensaje = aviso, ERROR
-
+    def _es_creador(self) -> bool:
+        return (
+            bool(self._partida.jugadores)
+            and self._partida.jugadores[0].id_usuario == self.ctx.id_usuario
+        )
     def botones(self) -> List[Boton]:
-        """
-        Descripción:
-            Arma los tres botones: 'Configuración' (devuelve 'configuracion'), 'Iniciar
-            partida' (en verde, ejecuta _iniciar) y 'Volver' (en gris, devuelve 'volver').
-        Entradas:
-            Ninguna.
-        Salidas:
-            List[Boton]: botones de la pantalla.
-        """
-        return [Boton(pygame.Rect(60, 400, 200, 40), "Configuración", lambda: "configuracion"),
-                Boton(pygame.Rect(280, 400, 200, 40), "Iniciar partida", self._iniciar, EXITO),
-                Boton(pygame.Rect(500, 400, 200, 40), "Volver", lambda: "volver", GRIS)]
-
+        creador = self._es_creador()
+        botones = []
+        if creador:
+            botones.append(Boton(pygame.Rect(60, 400, 200, 40),"Configuración",lambda: "configuracion",))
+        inicio_x = 280 if creador else 170
+        volver_x = 500 if creador else 390
+        botones.extend([
+            Boton(pygame.Rect(inicio_x, 400, 200, 40),"Iniciar partida",self._iniciar, EXITO,),
+            Boton(pygame.Rect(volver_x, 400, 200, 40),"Volver",lambda: "volver",GRIS,),])
+        return botones
     def _iniciar(self) -> str:
         """
         Descripción:
@@ -68,7 +67,6 @@ class PantallaSala(Pantalla):
         """
         self.ctx.partida.iniciar()
         return "arena"
-
     def actualizar(self) -> Optional[str]:
         """
         Descripción:
@@ -87,7 +85,6 @@ class PantallaSala(Pantalla):
                     j.id_usuario == self.ctx.id_usuario for j in self._partida.jugadores):
                 return "arena"
         return None
-
     def dibujar(self, superficie) -> None:
         """
         Descripción:
@@ -103,7 +100,7 @@ class PantallaSala(Pantalla):
             Ninguna.
         """
         self.dibujar_encabezado(superficie, "Sala de espera")
-        p, total = self._partida, min(2, len(self.ctx.partida.arena.puntos_inicio()))
+        p, total = self._partida, min(3, len(self.ctx.partida.arena.puntos_inicio()))
         esperando = len(p.jugadores) < ServicioPartida.JUGADORES_MINIMOS
         msg = "Esperando jugador..." if esperando else "Jugadores listos. Pueden iniciar la partida."
         if esperando and ServicioPartida.PERMITIR_UN_JUGADOR:

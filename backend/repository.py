@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS partidas (
     resultado TEXT NOT NULL CHECK (resultado IN ('victoria','derrota','empate')),
     match_id TEXT,
     duracion_segundos INTEGER NOT NULL DEFAULT 0,
+    nuevo_record INTEGER NOT NULL DEFAULT 0,
     UNIQUE (match_id, uid)
 );
 CREATE TABLE IF NOT EXISTS logros (
@@ -47,6 +48,11 @@ class SQLiteRepository:
                 con.execute(
                     "ALTER TABLE partidas "
                     "ADD COLUMN duracion_segundos INTEGER NOT NULL DEFAULT 0"
+                )
+            if "nuevo_record" not in columnas:
+                con.execute(
+                    "ALTER TABLE partidas "
+                    "ADD COLUMN nuevo_record INTEGER NOT NULL DEFAULT 0"
                 )
             con.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_partidas_match_uid "
@@ -91,8 +97,8 @@ class SQLiteRepository:
         if not isinstance(match_id, str) or not match_id.strip():
             raise ValueError("La partida necesita un identificador válido.")
         match_id = match_id.strip()
-        if not isinstance(participantes, list) or len(participantes) != 2:
-            raise ValueError("El resultado debe incluir exactamente dos participantes.")
+        if not isinstance(participantes, list) or not 2 <= len(participantes) <= 3:
+            raise ValueError("El resultado debe incluir entre dos y tres participantes.")
         if type(duracion_segundos) is not int or duracion_segundos < 0:
             raise ValueError("La duración debe ser un entero no negativo.")
         if fecha is None:
@@ -116,8 +122,13 @@ class SQLiteRepository:
         uids = [fila[0] for fila in filas]
         if len(set(uids)) != len(uids):
             raise ValueError("La partida no puede incluir dos veces al mismo jugador.")
-        resultados = sorted(fila[2] for fila in filas)
-        if resultados not in (["derrota", "victoria"], ["empate", "empate"]):
+        resultados = [fila[2] for fila in filas]
+        hay_un_ganador = (
+            resultados.count("victoria") == 1
+            and resultados.count("derrota") == len(filas) - 1
+        )
+        todos_empataron = all(resultado == "empate" for resultado in resultados)
+        if not (hay_un_ganador or todos_empataron):
             raise ValueError("Los resultados de ambos participantes no coinciden.")
         try:
             with closing(self._con()) as con, con:
@@ -133,10 +144,11 @@ class SQLiteRepository:
                             "La partida ya existe con participantes diferentes."
                         )
                     return False
+                placeholders = ", ".join("?" for _ in uids)
                 existentes = {
                     fila["uid"]
                     for fila in con.execute(
-                        "SELECT uid FROM jugadores WHERE uid IN (?, ?)",
+                        f"SELECT uid FROM jugadores WHERE uid IN ({placeholders})",
                         uids,
                     )
                 }
@@ -144,12 +156,27 @@ class SQLiteRepository:
                     raise UserNotFound(
                         "No se puede guardar la partida: falta el perfil de un jugador."
                     )
+                records_actuales = {
+                    fila["uid"]: fila["record"]
+                    for fila in con.execute(
+                        f"SELECT uid, record FROM jugadores WHERE uid IN ({placeholders})",
+                        uids,
+                    )
+                }
                 con.executemany(
                     "INSERT INTO partidas "
-                    "(uid, fecha, puntaje, resultado, match_id, duracion_segundos) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "(uid, fecha, puntaje, resultado, match_id, duracion_segundos, nuevo_record) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     [
-                        (uid, fecha, puntaje, resultado, match_id, duracion_segundos)
+                        (
+                            uid,
+                            fecha,
+                            puntaje,
+                            resultado,
+                            match_id,
+                            duracion_segundos,
+                            int(puntaje > records_actuales[uid]),
+                        )
                         for uid, puntaje, resultado in filas
                     ],
                 )
@@ -162,6 +189,27 @@ class SQLiteRepository:
                 "No se pudo guardar el resultado de la partida."
             ) from error
         return True
+
+    def obtener_marcas_partida(self, match_id):
+        """Devuelve el récord personal consolidado para cada participante de una partida."""
+        with closing(self._con()) as con:
+            filas = con.execute(
+                """
+                SELECT p.uid, p.nuevo_record, j.record
+                FROM partidas AS p
+                JOIN jugadores AS j ON j.uid = p.uid
+                WHERE p.match_id = ?
+                """,
+                (match_id,),
+            ).fetchall()
+        return {
+            fila["uid"]: {
+                "new_record": bool(fila["nuevo_record"]),
+                "personal_record": fila["record"],
+            }
+            for fila in filas
+        }
+
     def _consultar_ranking(self):
         with closing(self._con()) as con:
             filas = con.execute(
@@ -201,12 +249,16 @@ class SQLiteRepository:
                 SELECT p.fecha AS played_at, p.puntaje AS score,
                         p.resultado AS result, p.match_id,
                         p.duracion_segundos AS duration_seconds,
+                        p.nuevo_record AS new_record,
                         (
-                            SELECT o.nombre
-                            FROM partidas AS op
-                            JOIN jugadores AS o ON o.uid = op.uid
-                            WHERE op.match_id = p.match_id AND op.uid != p.uid
-                            LIMIT 1
+                            SELECT group_concat(opponent.nombre, ', ')
+                            FROM (
+                                SELECT o.nombre
+                                FROM partidas AS op
+                                JOIN jugadores AS o ON o.uid = op.uid
+                                WHERE op.match_id = p.match_id AND op.uid != p.uid
+                                ORDER BY o.nombre COLLATE NOCASE
+                            ) AS opponent
                         ) AS opponent
                 FROM partidas AS p
                 WHERE p.uid = ?
@@ -214,6 +266,8 @@ class SQLiteRepository:
                 """,
                 (uid,),
             )]
+            for partida in partidas:
+                partida["new_record"] = bool(partida["new_record"])
             logros = [r["titulo"] for r in con.execute(
                 "SELECT titulo FROM logros WHERE uid = ?", (uid,))]
             ranking = next(

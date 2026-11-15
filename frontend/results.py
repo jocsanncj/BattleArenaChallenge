@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 from array import array
+import base64
+from io import BytesIO
 import json
 import math
 import os
@@ -16,6 +18,7 @@ from pathlib import Path
 import random
 import subprocess
 import sys
+import tempfile
 import time
 
 try:
@@ -40,14 +43,36 @@ def _require_pygame() -> None:
 
 
 def draw_avatar(surface, avatar_id: str, center: tuple, size: int = 18,
-                avatar_path: str | None = None) -> None:
+                avatar_path: str | None = None,
+                avatar_png: str | None = None) -> None:
     """
-    Dibuja dos robots distintos; size es el radio y se comparte entre US10 y la ventana de victoria.
+    Dibuja el avatar elegido, usando el catálogo o los bytes PNG personalizados.
     """
     _require_pygame()
+    from shared.domain.avatares import AVATARES_PREDETERMINADOS, ServicioAvatar
+
     x, y = (int(value) for value in center)
     radius = max(8, int(size))
-    # Requiere US06: los datos del jugador proporcionan avatar_path (ruta de la imagen del avatar); sin ruta se usa un marcador, pero la integración final debe enviar el avatar real.
+    if avatar_png:
+        key = (avatar_id, radius)
+        if key not in _AVATAR_CACHE:
+            try:
+                image = pygame.image.load(
+                    BytesIO(base64.b64decode(avatar_png, validate=True)),
+                    "avatar.png",
+                )
+                width, height = image.get_size()
+                scale = radius * 2 / max(width, height)
+                _AVATAR_CACHE[key] = pygame.transform.smoothscale(
+                    image,
+                    (max(1, int(width * scale)), max(1, int(height * scale))),
+                )
+            except (ValueError, pygame.error):
+                _AVATAR_CACHE[key] = None
+        image = _AVATAR_CACHE[key]
+        if image is not None:
+            surface.blit(image, image.get_rect(center=(x, y)))
+            return
     if avatar_path:
         key = (str(avatar_path), radius)
         if key not in _AVATAR_CACHE:
@@ -63,6 +88,14 @@ def draw_avatar(surface, avatar_id: str, center: tuple, size: int = 18,
         if image is not None:
             surface.blit(image, image.get_rect(center=(x, y)))
             return
+    avatar = next(
+        (avatar for avatar in AVATARES_PREDETERMINADOS if avatar.id == avatar_id),
+        None,
+    )
+    if avatar is not None:
+        image = ServicioAvatar.dibujar_predeterminado(avatar, radius * 2)
+        surface.blit(image, image.get_rect(center=(x, y)))
+        return
     color = ORANGE if avatar_id == "orbit" else TEAL
     pygame.draw.ellipse(surface, (8, 12, 26),
                         (x - radius, y + radius * 0.65, radius * 2, radius * 0.65))
@@ -166,24 +199,67 @@ def _validated_result(result: dict) -> dict:
     """
     if not isinstance(result, dict) or result.get("status") != "finished":
         raise ValueError("La ventana de victoria requiere un resultado final de la partida con status='finished'.")
+    if result.get("results_persisted") is not True:
+        raise ValueError("La ceremonia requiere resultados consolidados por el servidor.")
     players = result.get("players")
-    if not isinstance(players, list) or len(players) != 2:
-        raise ValueError("El resultado final debe incluir a dos jugadores.")
+    if not isinstance(players, list) or not 2 <= len(players) <= 3:
+        raise ValueError("El resultado final debe incluir entre dos y tres jugadores.")
     scores = result.get("scores", {})
     if not isinstance(scores, dict):
         raise ValueError("scores debe ser un diccionario que asocie cada ID de jugador con su puntuación.")
     normalized = []
+    player_ids = set()
     for player in players:
-        if not isinstance(player, dict) or not player.get("player_id"):
+        if (not isinstance(player, dict)
+                or not isinstance(player.get("player_id"), str)
+                or not player["player_id"].strip()):
             raise ValueError("Falta player_id en los datos del jugador.")
-        score = scores.get(player["player_id"], player.get("score", 0))
+        if player["player_id"] in player_ids:
+            raise ValueError("El resultado final repite un jugador.")
+        player_ids.add(player["player_id"])
+        score = scores.get(player["player_id"])
         if type(score) is not int or score < 0:
             raise ValueError("La puntuación del jugador debe ser un entero no negativo.")
+        if player.get("score") != score:
+            raise ValueError("Los puntajes de jugador y resultado final no coinciden.")
+        new_record = player.get("new_record", False)
+        personal_record = player.get("personal_record", score)
+        if type(new_record) is not bool or type(personal_record) is not int:
+            raise ValueError("Los datos del récord personal no son válidos.")
+        if personal_record < score or (new_record and personal_record != score):
+            raise ValueError("El récord personal no puede ser menor que el puntaje de la partida.")
+        avatar_png = player.get("avatar_png")
+        if avatar_png is not None and (
+            not isinstance(avatar_png, str) or len(avatar_png) > 2_000_000
+        ):
+            raise ValueError("La imagen del avatar no tiene un formato válido.")
+        avatar_id = player.get("avatar_id", "")
+        if not isinstance(avatar_id, str):
+            raise ValueError("El identificador del avatar no es válido.")
         normalized.append(dict(player, score=score,
-                               username=str(player.get("username") or "Jugador")))
-    if result.get("winner_id") not in {p["player_id"] for p in normalized}:
-        raise ValueError("winner_id debe corresponder a un jugador de esta partida.")
-    return dict(result, players=normalized)
+                               username=str(player.get("username") or "Jugador"),
+                               new_record=new_record,
+                               personal_record=personal_record))
+    if set(scores) != player_ids:
+        raise ValueError("Los puntajes no coinciden con la lista de participantes.")
+    winner_id = result.get("winner_id")
+    top_score = max(player["score"] for player in normalized)
+    if (not isinstance(winner_id, str)
+            or winner_id not in player_ids
+            or next(p["score"] for p in normalized if p["player_id"] == winner_id) != top_score
+            or sum(p["score"] == top_score for p in normalized) != 1):
+        raise ValueError("winner_id debe ser el único jugador con el puntaje más alto.")
+    duration = result.get("duration_seconds", result.get("elapsed_seconds"))
+    if (isinstance(duration, bool) or not isinstance(duration, (int, float))
+            or not math.isfinite(duration) or duration < 0):
+        raise ValueError("La duración final de la partida no es válida.")
+    ordered = sorted(
+        normalized,
+        key=lambda player: (-player["score"], player["username"].casefold()),
+    )
+    for position, player in enumerate(ordered, start=1):
+        player["position"] = position
+    return dict(result, players=ordered, duration_seconds=int(round(duration)))
 
 
 class VictoryView:
@@ -227,43 +303,113 @@ class VictoryView:
             yy = int((y + speed * elapsed) % 730) - 20
             xx = int(x + math.sin(elapsed + y) * 10)
             # Reserva las zonas de nombres y puntuaciones para que el confeti no oculte los resultados.
-            if 332 <= yy <= 426 or 451 <= yy <= 556:
+            if 315 <= yy <= 588:
                 continue
             pygame.draw.rect(surface, color, (xx, yy, size, size + 4))
         self._text(surface, "BATTLE ARENA  /  RESULTADOS", (430, 33), 13, PURPLE, True, True)
         self._text(surface, "¡VICTORIA!", (430, 92), 56, GOLD, True, True)
         players = result["players"]
         winner = next(p for p in players if p["player_id"] == result["winner_id"])
-        pygame.draw.circle(surface, (71, 56, 79), (430, 264), 91)
-        pygame.draw.polygon(surface, GOLD, [(399, 183), (399, 159), (415, 170),
-                                          (430, 148), (445, 170), (461, 159), (461, 183)])
-        draw_avatar(surface, winner.get("avatar_id", "nova"), (430, 267), 57, winner.get("avatar_path"))
-        self._text(surface, winner["username"], (430, 361), 36, TEXT, True, True, max_width=740)
-        self._text(surface, "¡Felicidades! La arena tiene un nuevo campeón.", (430, 405),
-                   19, MUTED, center=True)
-        for index, player in enumerate(sorted(players, key=lambda p: p["score"], reverse=True)):
-            x = 80 + index * 360
+        pygame.draw.circle(surface, (71, 56, 79), (430, 205), 73)
+        pygame.draw.polygon(surface, GOLD, [(405, 151), (405, 133), (418, 143),
+                                          (430, 126), (442, 143), (455, 133), (455, 151)])
+        draw_avatar(
+            surface,
+            winner.get("avatar_id", ""),
+            (430, 210),
+            46,
+            winner.get("avatar_path"),
+            winner.get("avatar_png"),
+        )
+        self._text(surface, winner["username"], (430, 296), 32, TEXT, True, True, max_width=740)
+        self._text(
+            surface,
+            f"Puntaje final: {winner['score']} puntos",
+            (430, 331),
+            18,
+            MUTED,
+            center=True,
+        )
+        duration = result["duration_seconds"]
+        self._text(
+            surface,
+            f"Duración de la partida: {duration // 60:02d}:{duration % 60:02d}",
+            (430, 369),
+            17,
+            TEAL,
+            True,
+            True,
+        )
+        card_width, card_gap = 250, 20
+        first_x = (WINDOW_SIZE[0] - (len(players) * card_width + (len(players) - 1) * card_gap)) // 2
+        for index, player in enumerate(players):
+            x = first_x + index * (card_width + card_gap)
             is_winner = player["player_id"] == result["winner_id"]
-            rect = (x, 451, 340, 105)
+            rect = (x, 408, card_width, 174)
             pygame.draw.rect(surface, (30, 28, 54), rect, border_radius=16)
-            pygame.draw.rect(surface, GOLD if is_winner else (71, 64, 95),
-                             rect, width=1, border_radius=16)
-            draw_avatar(surface, player.get("avatar_id", "nova"), (x + 40, 502), 20, player.get("avatar_path"))
-            self._text(surface, player["username"], (x + 75, 466), 20, TEXT, True, max_width=173)
-            self._text(surface, "CAMPEÓN" if is_winner else "RIVAL", (x + 75, 507), 11,
-                       GOLD if is_winner else MUTED, True)
+            pygame.draw.rect(
+                surface,
+                GOLD if is_winner else (71, 64, 95),
+                rect,
+                width=2 if is_winner else 1,
+                border_radius=16,
+            )
+            draw_avatar(
+                surface,
+                player.get("avatar_id", ""),
+                (x + 38, 447),
+                24,
+                player.get("avatar_path"),
+                player.get("avatar_png"),
+            )
+            self._text(
+                surface,
+                f"{player['position']}. LUGAR",
+                (x + 74, 427),
+                12,
+                GOLD if is_winner else PURPLE,
+                True,
+            )
+            self._text(
+                surface,
+                player["username"],
+                (x + 74, 447),
+                18,
+                TEXT,
+                True,
+                max_width=card_width - 86,
+            )
             score_color = ORANGE if player.get("avatar_id") == "orbit" else TEAL
-            self._text(surface, player["score"], (x + 294, 486), 31, score_color,
-                       True, True, max_width=76)
-            self._text(surface, "PUNTOS", (x + 294, 524), 10, MUTED, True, True)
-        self._text(surface, "Gracias por jugar. ¡Nos vemos en la próxima partida!", (430, 583),
+            self._text(
+                surface,
+                f"{player['score']} puntos",
+                (x + 16, 487),
+                20,
+                score_color,
+                True,
+            )
+            record_text = (
+                f"¡Nuevo récord! {player['personal_record']}"
+                if player["new_record"]
+                else f"Récord personal: {player['personal_record']}"
+            )
+            self._text(
+                surface,
+                record_text,
+                (x + 16, 529),
+                14,
+                GOLD if player["new_record"] else MUTED,
+                player["new_record"],
+                max_width=card_width - 32,
+            )
+        self._text(surface, "Gracias por jugar. ¡Nos vemos en la próxima partida!", (430, 612),
                    14, TEAL, center=True)
         if audio_notice:
-            self._text(surface, audio_notice, (430, 613), 12, ORANGE, center=True, max_width=800)
+            self._text(surface, audio_notice, (430, 640), 12, ORANGE, center=True, max_width=800)
         else:
             self._text(surface, "M  ·  " + ("ACTIVAR MÚSICA" if muted else "SILENCIAR MÚSICA"),
-                       (430, 613), 12, MUTED, center=True)
-        self._text(surface, "ESC  ·  CERRAR VENTANA", (430, 660), 14, TEXT, center=True)
+                       (430, 640), 12, MUTED, center=True)
+        self._text(surface, "ESC  ·  CERRAR VENTANA", (430, 675), 14, TEXT, center=True)
 
 
 def show_victory(result: dict, screenshot: str | Path | None = None) -> None:
@@ -313,11 +459,36 @@ def launch_victory_window(result: dict) -> subprocess.Popen:
     # Requiere US16: recibe el resultado final con el ganador ya confirmado.
     confirmed = _validated_result(result)
     payload = json.dumps(confirmed, ensure_ascii=False)
+    result_path = None
     options = {}
     if os.name == "nt":
         options["creationflags"] = subprocess.CREATE_NO_WINDOW
-    return subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
-                             "--result-json", payload], **options)
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".json",
+            prefix="battle-arena-result-",
+            delete=False,
+        ) as result_file:
+            result_file.write(payload)
+            result_path = Path(result_file.name)
+        return subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "frontend.results",
+                "--result-file",
+                str(result_path),
+                "--delete-result-file",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            **options,
+        )
+    except (OSError, ValueError):
+        if result_path is not None:
+            result_path.unlink(missing_ok=True)
+        raise
 
 
 def main() -> int:
@@ -325,6 +496,7 @@ def main() -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--result-file", type=Path, help="Resultado final JSON confirmado por US16")
     source.add_argument("--result-json", help=argparse.SUPPRESS)
+    parser.add_argument("--delete-result-file", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--screenshot", type=Path, help="Guardar una captura de prueba y salir")
     args = parser.parse_args()
     try:
@@ -334,6 +506,9 @@ def main() -> int:
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"US17: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if args.delete_result_file and args.result_file is not None:
+            args.result_file.unlink(missing_ok=True)
     return 0
 
 

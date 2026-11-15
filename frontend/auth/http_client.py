@@ -150,6 +150,13 @@ class ClienteServidor:
         return self._llamar("POST", "/api/game/start", token)
     def mover_jugador(self, token, direccion):
         return self._llamar("POST", "/api/game/move", token, {"direction": direccion})
+    def interactuar_reactor(self, token, accion, event_id):
+        return self._llamar(
+            "POST",
+            "/api/game/reactor",
+            token,
+            {"action": accion, "event_id": event_id},
+        )
     def guardar_configuracion_partida(self, token, configuracion):
         return self._llamar("PUT", "/api/game/config", token, configuracion)
     def obtener_ranking(self):

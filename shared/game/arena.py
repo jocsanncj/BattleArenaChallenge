@@ -27,7 +27,7 @@ class Player:
 
 class MultiplayerArena:
     """
-    Objeto del servidor: una partida de dos jugadores comparte una instancia; los clientes no deben crear estados de partida independientes.
+    Objeto del servidor: una partida de dos o tres jugadores comparte una instancia; los clientes no deben crear estados independientes.
     """
 
     def __init__(self, broadcast: Callable[[dict], None], scoreboard: Scoreboard | None = None,
@@ -89,12 +89,12 @@ class MultiplayerArena:
             else:
                 if self.rules.status != "waiting":
                     raise ValueError("Después de iniciar la partida, solo pueden reconectarse los jugadores originales.")
-                if len(self._players) >= 2:
-                    raise ValueError("La arena de este MVP solo admite dos jugadores diferentes.")
+                if len(self._players) >= 3:
+                    raise ValueError("La arena admite como máximo tres jugadores.")
                 if any(p.username.casefold() == username.casefold() for p in self._players.values()):
-                    raise ValueError("Los dos jugadores deben tener nombres de usuario diferentes.")
+                    raise ValueError("Los jugadores deben tener nombres de usuario diferentes.")
                 if any(p.avatar_id == avatar_id for p in self._players.values()):
-                    raise ValueError("Los dos jugadores deben tener avatares diferentes.")
+                    raise ValueError("Los jugadores deben tener avatares diferentes.")
                 self.scoreboard.add_player(player_id)
                 self._players[player_id] = Player(player_id, username, avatar_id, x, y)
             self._connections[connection_id] = player_id
@@ -114,7 +114,7 @@ class MultiplayerArena:
 
     def has_two_players(self) -> bool:
         with self._lock:
-            return len(self._connections) == 2
+            return len(self._connections) >= 2
 
     def begin_match(self, now: float | None = None) -> None:
         # Requiere US09: invoque este método cuando ambos jugadores estén listos; también reanuda la partida tras una reconexión.
@@ -122,7 +122,7 @@ class MultiplayerArena:
         with self._lock:
             if self._final_result is not None:
                 raise ValueError("No se puede volver a iniciar una partida finalizada.")
-            if len(self._connections) != 2:
+            if len(self._connections) < 2:
                 raise ValueError("Se necesitan al menos dos jugadores diferentes conectados.")
             if self.rules.status == "waiting":
                 self.rules.start(now)
@@ -137,10 +137,9 @@ class MultiplayerArena:
             self._active = True
             self._broadcast(deepcopy(self._snapshot_locked()))
 
-    def confirm_movement(self, connection_id: str, x: float, y: float,
-                         now: float | None = None) -> bool:
+    def confirm_movement(self, connection_id: str, x: float, y: float,now: float | None = None) -> bool:
         """
-        Se invoca después de que US11 confirme el movimiento; actualiza posición y puntaje de forma atómica y difunde el resultado a ambos jugadores.
+        Se invoca después de que US11 confirme el movimiento; actualiza la posición y difunde el resultado a los jugadores.
         """
         # Requiere US11: valide límites, colisiones, velocidad y operaciones repetidas antes de pasar las coordenadas x, y confirmadas.
         # connection_id procede de la conexión real de US13; no lo sustituya por un player_id declarado en el mensaje.
@@ -160,8 +159,7 @@ class MultiplayerArena:
             player = self._players[player_id]
             if (player.x, player.y) == (x, y):
                 return False
-            # US15: cada movimiento real confirmado suma un punto; el puntaje no depende de los fotogramas dibujados.
-            self.scoreboard.award_movement(player_id)
+            # Los movimientos ordinarios no modifican el puntaje; solo las acciones competitivas válidas lo hacen.
             player.x, player.y = x, y
             self._rule_state = self.rules.update(self.scoreboard.scores(), now)
             if self._rule_state["status"] == "finished":

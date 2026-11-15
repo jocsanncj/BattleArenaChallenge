@@ -16,6 +16,12 @@ from shared.game.arena import MultiplayerArena
 from shared.game.rules import GameRules
 
 app = Flask(__name__)
+
+
+class ForbiddenOperation(PermissionError):
+    """Operación denegada a una sesión válida sin el permiso requerido."""
+
+
 datos = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
 datos.mkdir(parents=True, exist_ok=True)
 repo = SQLiteRepository(datos / "juego.db")
@@ -55,6 +61,9 @@ def requiere_sesion(f):
 
 
 # --- Errores: se declaran una vez, Flask elige el más específico ---
+@app.errorhandler(ForbiddenOperation)
+def _403(e): return jsonify(error=str(e)), 403
+
 @app.errorhandler(PermissionError)
 def _401(e): return jsonify(error=str(e)), 401
 
@@ -115,6 +124,7 @@ _GAME_ARENA = None
 _GAME_USERS = {}
 _GAME_PLAYER_IDS = {}
 _MOVE_TIMES = {}
+_REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
 
 def _id_jugador(claims):
     """Convierte el UID de Firebase en un entero estable compatible con el modelo de juego."""
@@ -164,25 +174,88 @@ def _validar_jugador(claims):
     jugador = repo.obtener(claims["uid"], True)
     return _id_jugador(claims), _player_id(claims), jugador.nombre
 
+def _actualizar_reactor(estado, ahora):
+    interaccion = _REACTOR["active"]
+    if interaccion is None:
+        return
+    jugador = next(
+        (
+            p for p in estado.get("players", [])
+            if p["player_id"] == interaccion["player_id"]
+        ),
+        None,
+    )
+    if (
+        estado.get("status") not in {"running", "overtime"}
+        or not estado.get("active")
+        or jugador is None
+        or not jugador.get("connected")
+        or not ARENA_PREDETERMINADA.junto_al_reactor(
+            int(jugador["x"]), int(jugador["y"])
+        )
+    ):
+        _REACTOR["active"] = None
+        return
+    if ahora - interaccion["started_at"] < 1.5:
+        return
+    _GAME_ARENA.scoreboard.award_extraction(interaccion["player_id"])
+    _REACTOR["active"] = None
+    _REACTOR["available_at"] = ahora + 4.0
+
+def _estado_reactor(ahora):
+    interaccion = _REACTOR["active"]
+    if interaccion is not None:
+        restante = max(0.0, 1.5 - (ahora - interaccion["started_at"]))
+        return {
+            "status": "ocupado",
+            "remaining_seconds": round(restante, 2),
+        }
+    restante = max(0.0, _REACTOR["available_at"] - ahora)
+    if restante > 0:
+        return {
+            "status": "recargando",
+            "remaining_seconds": round(restante, 2),
+        }
+    return {"status": "disponible", "remaining_seconds": 0.0}
+
+def _persistir_resultado_partida(estado):
+    if estado.get("status") != "finished":
+        return
+    participantes = []
+    for jugador in estado.get("players", []):
+        player_id = jugador["player_id"]
+        uid = _GAME_FIREBASE_UIDS.get(player_id)
+        if uid is None:
+            raise RuntimeError("No se encontró la cuenta de un participante.")
+        participantes.append({
+            "uid": uid,
+            "score": jugador["score"],
+            "result": "victoria" if player_id == estado.get("winner_id") else "derrota",
+        })
+    repo.registrar_resultado_partida(
+        estado["match_id"],
+        participantes,
+        duracion_segundos=int(estado.get("elapsed_seconds", 0)),
+    )
+    marcas = repo.obtener_marcas_partida(estado["match_id"])
+    if len(marcas) != len(participantes):
+        raise RuntimeError("No se consolidaron los resultados de todos los participantes.")
+    for jugador in estado["players"]:
+        uid = _GAME_FIREBASE_UIDS[jugador["player_id"]]
+        jugador.update(marcas[uid])
+    estado["duration_seconds"] = int(estado.get("elapsed_seconds", 0))
+    estado["results_persisted"] = True
+
 def _estado_arena():
     if _GAME_ARENA is None:
         return None
-    estado = _GAME_ARENA.tick()
-    if estado.get("status") == "finished":
-        ganador_id = estado.get("winner_id")
-        participantes = []
-        for jugador in estado.get("players", []):
-            player_id = jugador["player_id"]
-            uid = _GAME_FIREBASE_UIDS.get(player_id)
-            if uid is None:
-                raise RuntimeError("No se encontró la cuenta de un participante.")
-            participantes.append({
-                "uid": uid,
-                "score": jugador["score"],
-                "result": "victoria" if player_id == ganador_id else "derrota",
-            })
-        repo.registrar_resultado_partida(estado["match_id"], participantes,
-            duracion_segundos=int(estado.get("elapsed_seconds", 0)))
+    ahora = time.monotonic()
+    estado = _GAME_ARENA.tick(ahora)
+    if estado.get("status") != "finished":
+        _actualizar_reactor(estado, ahora)
+        estado = _GAME_ARENA.tick(ahora)
+    estado["reactor"] = _estado_reactor(ahora)
+    _persistir_resultado_partida(estado)
     jugadores = []
     for jugador in estado.get("players", []):
         jugador["user_id"] = _GAME_PLAYER_IDS[jugador["player_id"]]
@@ -193,10 +266,10 @@ def _estado_arena():
     return estado
 
 def _iniciar_arena(partida):
-    global _GAME_ARENA, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES
+    global _GAME_ARENA, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
     jugadores = partida.get("jugadores", [])
-    if len(jugadores) != 2:
-        raise ValueError("Se necesitan exactamente dos jugadores para iniciar la partida.")
+    if not 2 <= len(jugadores) <= 3:
+        raise ValueError("La partida requiere dos o tres jugadores.")
     configuracion = partida.get("configuracion", {})
     modo = configuracion.get("modo_fin")
     if modo not in {"tiempo", "puntos"}:
@@ -208,7 +281,8 @@ def _iniciar_arena(partida):
     )
     arena = MultiplayerArena(lambda _estado: None, rules=reglas)
     _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES = {}, {}, {}
-    posiciones = ARENA_PREDETERMINADA.puntos_inicio()
+    _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
+    posiciones = ARENA_PREDETERMINADA.puntos_inicio()[:3]
     estado = _leer_estado_juego()
     for indice, jugador in enumerate(jugadores):
         user_id = str(jugador["id_usuario"])
@@ -223,6 +297,57 @@ def _iniciar_arena(partida):
         arena.join_player(player_id, player_id, jugador["nombre_usuario"], avatar_id, x, y)
     arena.begin_match()
     _GAME_ARENA = arena
+
+@app.post("/api/game/reactor")
+@requiere_sesion
+def interactuar_con_reactor(claims):
+    _, player_id, _ = _validar_jugador(claims)
+    datos = request.get_json(silent=True)
+    if not isinstance(datos, dict):
+        raise ValueError("La solicitud de interacción no es válida.")
+    accion = datos.get("action")
+    event_id = datos.get("event_id")
+    if accion not in {"start", "stop"}:
+        raise ValueError("La acción del reactor no es válida.")
+    if not isinstance(event_id, str) or not event_id.strip() or len(event_id) > 100:
+        raise ValueError("El identificador de interacción no es válido.")
+    event_id = event_id.strip()
+    with _GAME_LOCK:
+        if _GAME_ARENA is None:
+            raise ValueError("La partida todavía no ha comenzado.")
+        estado = _estado_arena()
+        if accion == "stop":
+            activa = _REACTOR["active"]
+            if (
+                activa is not None
+                and activa["player_id"] == player_id
+                and activa["event_id"] == event_id
+            ):
+                _REACTOR["active"] = None
+            return {"ok": True, "state": estado}
+        if estado is None or estado.get("status") not in {"running", "overtime"}:
+            raise ValueError("La partida no está activa.")
+        jugador = next((p for p in estado.get("players", [])if p["player_id"] == player_id and p.get("connected")),None,)
+        if jugador is None:
+            raise PermissionError("No perteneces a esta partida.")
+        clave_evento = (player_id, event_id)
+        if clave_evento in _REACTOR["events"]:
+            return {"ok": True, "duplicate": True, "state": estado}
+        if not ARENA_PREDETERMINADA.junto_al_reactor(int(jugador["x"]), int(jugador["y"])):
+            raise ValueError("Acércate a una casilla junto al reactor.")
+        if _REACTOR["active"] is not None:
+            raise ValueError("Otro jugador está extrayendo energía del reactor.")
+        ahora = time.monotonic()
+        if ahora < _REACTOR["available_at"]:
+            restante = round(_REACTOR["available_at"] - ahora, 1)
+            raise ValueError(f"El reactor está recargando. Inténtalo en {restante} s.")
+        _REACTOR["events"].add(clave_evento)
+        _REACTOR["active"] = {
+            "player_id": player_id,
+            "event_id": event_id,
+            "started_at": ahora,
+        }
+        return {"ok": True, "state": _estado_arena()}
 
 @app.get("/api/game/avatar")
 @requiere_sesion
@@ -308,8 +433,8 @@ def unirse_partida_juego(claims):
             return {"ok": True}
         if partida.get("estado") != "esperando":
             raise ValueError("La partida ya comenzó. Espere a que termine.")
-        if len(partida["jugadores"]) >= 2:
-            raise ValueError("La sala está llena; solo admite dos jugadores.")
+        if len(partida["jugadores"]) >= 3:
+            raise ValueError("La sala está llena; solo admite tres jugadores.")
         if any(j["nombre_usuario"].casefold() == nombre.casefold() for j in partida["jugadores"]):
             raise ValueError("Los jugadores deben tener nombres de usuario diferentes.")
         indice = len(partida["jugadores"])
@@ -332,7 +457,9 @@ def salir_partida_juego(claims):
         partida = estado["partida"]
         if _GAME_ARENA is not None:
             _GAME_ARENA.disconnect_player(player_id)
-            jugadores = _GAME_ARENA.snapshot()["players"]
+            snapshot = _GAME_ARENA.snapshot()
+            _persistir_resultado_partida(snapshot)
+            jugadores = snapshot["players"]
             if all(not jugador["connected"] for jugador in jugadores):
                 _GAME_ARENA = None
                 estado["partida"] = _partida_vacia()
@@ -366,8 +493,11 @@ def guardar_configuracion_juego(claims):
         partida = estado["partida"]
         if partida.get("estado") != "esperando":
             raise ValueError("La partida ya comenzó: no se puede cambiar la configuración.")
+        jugadores = partida.get("jugadores", [])
         if not any(j["id_usuario"] == user_id for j in partida["jugadores"]):
             raise PermissionError("Únete a la sala para cambiar su configuración.")
+        if jugadores[0]["id_usuario"] != user_id:
+            raise ForbiddenOperation("Solo el creador de la sala puede cambiar la configuración.")
         partida["configuracion"] = {
             "modo_fin": modo,
             "minutos_fin": minutos,
@@ -389,8 +519,10 @@ def iniciar_partida_juego(claims):
             raise PermissionError("Únete a la sala antes de iniciar la partida.")
         if partida.get("estado") != "esperando":
             raise ValueError("La partida ya comenzó.")
-        if len(partida["jugadores"]) != 2:
-            raise ValueError("Esperando jugador...")
+        if len(partida["jugadores"]) < 2:
+            raise ValueError("Esperando al menos dos jugadores...")
+        if len(partida["jugadores"]) > 3:
+            raise ValueError("La partida admite como máximo tres jugadores.")
         _iniciar_arena(partida)
         partida["estado"] = "jugando"
         partida["iniciada_en"] = time.time()
@@ -400,7 +532,7 @@ def iniciar_partida_juego(claims):
 @app.post("/api/game/move")
 @requiere_sesion
 def mover_jugador_juego(claims):
-    """Valida y aplica un paso de movimiento en el servidor y solo allí suma puntos."""
+    """Valida y aplica un paso de movimiento sin otorgar puntos por caminar."""
     _, player_id, _ = _validar_jugador(claims)
     movimiento = request.get_json(silent=True)
     direccion = movimiento.get("direction") if isinstance(movimiento, dict) else None

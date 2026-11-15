@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from uuid import uuid4
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
@@ -47,7 +48,6 @@ def bindear(tecla: str, funcion: Callable[[], None]) -> None:
 def iniciar() -> None:
     """Prepara el sonido y el subsistema de gamepads, sin crear listeners externos."""
     global _sonido
-
     ruta = RUTA_SONIDO
     if not os.path.isabs(ruta):
         raiz_proyecto = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,39 +59,38 @@ def iniciar() -> None:
     except (FileNotFoundError, pygame.error) as error:
         _sonido = None
         print(f"[acciones] No se pudo cargar el sonido '{ruta}': {error}")
-
-    bindear("e", _reproducir_sonido)
     pygame.joystick.init()
 
 
 class ControlEntrada:
     """Selecciona la entrada local y traduce teclado o controles SDL a direcciones."""
-
     UMBRAL_EJE = 0.5
-
     def __init__(self) -> None:
         pygame.joystick.init()
         self.modo = MODO_TECLADO
         self._teclas: set[int] = set()
         self._joystick: pygame.joystick.JoystickType | None = None
+        self._accion_id: str | None = None
         self.aviso = ""
         _abajo.clear()
         self._abrir_primer_gamepad()
-
     @property
     def nombre_gamepad(self) -> str | None:
         if self._joystick is None:
             return None
         return self._joystick.get_name()
-
     @property
     def gamepad_conectado(self) -> bool:
         return self._joystick is not None
-
+    @property
+    def accion_id(self) -> str | None:
+        """ID de la pulsación actual; permanece igual mientras se mantenga el botón."""
+        return self._accion_id
     def seleccionar(self, modo: str) -> None:
         if modo == MODO_TECLADO:
             self.modo = MODO_TECLADO
             self._teclas.clear()
+            self._accion_id = None
             return
         if modo != MODO_GAMEPAD:
             raise ValueError("El control debe ser 'teclado' o 'gamepad'.")
@@ -101,7 +100,7 @@ class ControlEntrada:
             raise ValueError("No se detectó un gamepad. Conecta el MSI FORCE GC30 V2 e inténtalo de nuevo.")
         self.modo = MODO_GAMEPAD
         self._teclas.clear()
-
+        self._accion_id = None
     def procesar_evento(self, evento: pygame.event.Event) -> None:
         if evento.type == pygame.KEYDOWN:
             nombre = pygame.key.name(evento.key).lower()
@@ -111,21 +110,26 @@ class ControlEntrada:
                 if accion:
                     accion()
             self._teclas.add(evento.key)
+            if self.modo == MODO_TECLADO and evento.key == pygame.K_e:
+                if self._accion_id is None:
+                    self._accion_id = uuid4().hex
         elif evento.type == pygame.KEYUP:
             nombre = pygame.key.name(evento.key).lower()
             _abajo.discard(nombre)
             self._teclas.discard(evento.key)
-        elif (
-            evento.type == pygame.JOYBUTTONDOWN
-            and self.modo == MODO_GAMEPAD
-            and self._joystick is not None
-            and evento.instance_id == self._joystick.get_instance_id()
-            and evento.button == BOTON_GAMEPAD_ACCION
-        ):
-            _reproducir_sonido()
+            if evento.key == pygame.K_e and self.modo == MODO_TECLADO:
+                self._accion_id = None
+        elif (evento.type == pygame.JOYBUTTONDOWN and self.modo == MODO_GAMEPAD and self._joystick is not None
+            and evento.instance_id == self._joystick.get_instance_id()  and evento.button == BOTON_GAMEPAD_ACCION):
+            if self._accion_id is None:
+                self._accion_id = uuid4().hex
+        elif (evento.type == pygame.JOYBUTTONUP and self.modo == MODO_GAMEPAD and self._joystick is not None
+            and evento.instance_id == self._joystick.get_instance_id() and evento.button == BOTON_GAMEPAD_ACCION):
+            self._accion_id = None
         elif evento.type == pygame.WINDOWFOCUSLOST:
             self._teclas.clear()
             _abajo.clear()
+            self._accion_id = None
         elif evento.type == pygame.JOYDEVICEADDED and self._joystick is None:
             try:
                 self._abrir_primer_gamepad()
@@ -141,8 +145,8 @@ class ControlEntrada:
                     self.aviso = str(error)
                 if self._joystick is None and self.modo == MODO_GAMEPAD:
                     self.modo = MODO_TECLADO
+                    self._accion_id = None
                     self.aviso = "Se desconectó el gamepad; se cambió al teclado."
-
     def direccion_actual(self) -> str | None:
         if self.modo == MODO_TECLADO:
             for tecla, direccion in _DIRECCIONES_TECLADO.items():
@@ -151,14 +155,12 @@ class ControlEntrada:
             return None
         if self._joystick is None:
             return None
-
         if self._joystick.get_numhats():
             x, y = self._joystick.get_hat(0)
             if y:
                 return "up" if y > 0 else "down"
             if x:
                 return "right" if x > 0 else "left"
-
         if self._joystick.get_numaxes() >= 2:
             x, y = self._joystick.get_axis(0), self._joystick.get_axis(1)
             if abs(x) >= self.UMBRAL_EJE or abs(y) >= self.UMBRAL_EJE:
@@ -166,7 +168,6 @@ class ControlEntrada:
                     return "right" if x > 0 else "left"
                 return "down" if y > 0 else "up"
         return None
-
     def _abrir_primer_gamepad(self) -> None:
         if self._joystick is not None:
             return

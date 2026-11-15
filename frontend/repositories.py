@@ -50,20 +50,16 @@ class RepositorioAvataresServidor(RepositorioAvatares):
 
 class RepositorioPartidaServidor(RepositorioPartida):
     """Envía acciones de juego al servidor y recibe su estado autoritativo."""
-
     @staticmethod
     def _cliente_token():
         from .auth.service import cliente_juego, token_para_juego
-
         return cliente_juego(), token_para_juego()
-
     def cargar(self) -> Partida:
         cliente, token = self._cliente_token()
         respuesta = cliente.obtener_partida(token)
         datos = respuesta.get("partida")
         if not isinstance(datos, dict):
             raise ValueError("El servidor devolvió un estado de partida inválido.")
-
         try:
             return Partida(
                 ConfiguracionPartida(**datos.get("configuracion", {})),
@@ -74,26 +70,24 @@ class RepositorioPartidaServidor(RepositorioPartida):
             )
         except (TypeError, ValueError, AttributeError) as error:
             raise ValueError("El servidor devolvió un estado de partida inválido.") from error
-
     def guardar(self, partida: Partida) -> None:
         cliente, token = self._cliente_token()
         cliente.guardar_configuracion_partida(token, asdict(partida.configuracion))
-
     def unirse_online(self) -> None:
         cliente, token = self._cliente_token()
         cliente.unirse_partida(token)
-
     def salir_online(self) -> None:
         cliente, token = self._cliente_token()
         cliente.salir_partida(token)
-
     def iniciar_online(self) -> None:
         cliente, token = self._cliente_token()
         cliente.iniciar_partida(token)
-
     def mover_online(self, direccion: str) -> None:
         cliente, token = self._cliente_token()
         cliente.mover_jugador(token, direccion)
+    def interaccion_reactor_online(self, accion: str, event_id: str) -> None:
+        cliente, token = self._cliente_token()
+        cliente.interactuar_reactor(token, accion, event_id)
 
 
 __all__ = ["RepositorioAvataresServidor", "RepositorioPartidaServidor"]

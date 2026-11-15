@@ -28,10 +28,8 @@ class ServicioPartida:
         _repo (RepositorioPartida): almacén donde se guarda la partida.
         arena (MapaArena): escenario donde se juega; define cuántos jugadores caben.
     """
-
     JUGADORES_MINIMOS = 2
     PERMITIR_UN_JUGADOR = False  # CAMBIO ONLINE: se exigen dos jugadores conectados para iniciar
-
     def __init__(self, repositorio: RepositorioPartida, arena: MapaArena = ARENA_PREDETERMINADA):
         """
         Descripción:
@@ -44,7 +42,6 @@ class ServicioPartida:
         """
         self._repo = repositorio
         self.arena = arena
-
     def obtener_partida(self) -> Partida:
         """
         Descripción:
@@ -56,7 +53,6 @@ class ServicioPartida:
             Partida: la partida con su estado más reciente.
         """
         return self._repo.cargar()
-
     # ----- Configuración de la partida -----
     def verificar_configurable(self) -> None:
         """
@@ -71,16 +67,14 @@ class ServicioPartida:
         """
         if self._repo.cargar().estado == "jugando":
             raise ErrorApp("La partida ya inició: no se puede cambiar la configuración.")
-
     def actualizar_configuracion(self, configuracion: ConfiguracionPartida) -> None:
         """
         Descripción:
             Guarda una nueva configuración de la partida.
-
             Pasos:
             1. Verifica que la partida no haya iniciado.
             2. Valida que el modo de fin sea 'tiempo' o 'puntos' y que los minutos, los
-               puntos y los segundos de congelación sean al menos 1; si no, lanza ErrorApp.
+            puntos y los segundos de congelación sean al menos 1; si no, lanza ErrorApp.
             3. Carga la partida, reemplaza su configuración y la guarda.
         Entradas:
             configuracion (ConfiguracionPartida): la configuración que se quiere aplicar.
@@ -107,7 +101,6 @@ class ServicioPartida:
         partida = self._repo.cargar()
         partida.configuracion = configuracion
         self._repo.guardar(partida)
-
     # ----- Sala de espera, inicio y temporizador -----
     def unirse(self, id_usuario: int, nombre_usuario: str) -> Jugador:
         """
@@ -115,12 +108,11 @@ class ServicioPartida:
             Hace que un jugador entre a la sala y le asigna un punto de inicio distinto al de
             los demás. Es idempotente: si el jugador ya está en la sala, devuelve su registro
             sin duplicarlo.
-
             Pasos:
             1. Si ya está en la sala, lo devuelve.
             2. Si la partida ya inició, lanza ErrorApp.
             3. Calcula los puntos de inicio libres; si no queda ninguno, lanza ErrorApp
-               ('La sala está llena').
+            ('La sala está llena').
             4. Crea el Jugador con el primer punto libre, lo agrega y guarda la partida.
         Entradas:
             id_usuario (int): identificador del jugador.
@@ -153,7 +145,6 @@ class ServicioPartida:
         partida.jugadores.append(jugador)
         self._repo.guardar(partida)
         return jugador
-
     def salir(self, id_usuario: int) -> None:
         """
         Descripción:
@@ -179,20 +170,17 @@ class ServicioPartida:
             if not restantes:
                 partida.estado, partida.iniciada_en = "esperando", None
             self._repo.guardar(partida)
-
     def iniciar(self) -> None:
         """
         Descripción:
             Inicia la partida si se cumplen las condiciones.
-
             Pasos:
             1. Si ya está en estado 'jugando', lanza ErrorApp.
             2. Determina cuántos jugadores se necesitan: 1 en modo provisional, o
-
             JUGADORES_MINIMOS en caso contrario.
             3. Si hay menos jugadores, lanza ErrorApp con el mensaje 'Esperando jugador...'.
             4. Cambia el estado a 'jugando', registra la hora actual como hora de inicio y
-               guarda la partida.
+            guarda la partida.
         Entradas:
             Ninguna.
         Salidas:
@@ -213,7 +201,6 @@ class ServicioPartida:
             raise ErrorApp("Esperando jugador...")
         partida.estado, partida.iniciada_en = "jugando", time.time()
         self._repo.guardar(partida)
-
     def mover(self, direccion: str) -> None:
         """Solicita un movimiento al servidor; este valida y confirma la acción."""
         if not isinstance(self._repo, RepositorioPartidaOnline):
@@ -222,7 +209,14 @@ class ServicioPartida:
             self._repo.mover_online(direccion)
         except (OSError, RuntimeError, ValueError) as error:
             raise ErrorApp(str(error)) from error
-
+    def interactuar_reactor(self, accion: str, event_id: str) -> None:
+        """Envía al servidor el inicio o fin de una interacción con el reactor."""
+        if not isinstance(self._repo, RepositorioPartidaOnline):
+            raise ErrorApp("La interacción con el reactor requiere el servidor de juego.")
+        try:
+            self._repo.interaccion_reactor_online(accion, event_id)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ErrorApp(str(error)) from error
     def segundos_transcurridos(self, partida: Partida) -> float:
         """
         Descripción:

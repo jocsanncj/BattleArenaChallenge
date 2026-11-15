@@ -43,6 +43,51 @@ class SQLiteRepositoryTests(unittest.TestCase):
         self.assertEqual(profile["statistics"]["points_accumulated"], 8)
         self.assertEqual(profile["match_history"][0]["opponent"], "JugadorDos")
         self.assertEqual(profile["match_history"][0]["duration_seconds"], 120)
+        self.assertTrue(profile["match_history"][0]["new_record"])
+        self.assertEqual(
+            self.repo.obtener_marcas_partida("match-one"),
+            {
+                "uid-one": {"new_record": True, "personal_record": 8},
+                "uid-two": {"new_record": True, "personal_record": 5},
+            },
+        )
+
+    def test_saves_three_player_match_with_all_opponents_and_records(self):
+        self.repo.crear("uid-three", "JugadorTres", "three@example.test")
+        participants = [
+            {"uid": "uid-one", "score": 8, "result": "victoria"},
+            {"uid": "uid-two", "score": 5, "result": "derrota"},
+            {"uid": "uid-three", "score": 3, "result": "derrota"},
+        ]
+        self.assertTrue(
+            self.repo.registrar_resultado_partida(
+                "match-three", participants, duracion_segundos=75
+            )
+        )
+        profile = self.repo.obtener("uid-one", True).to_dict()
+        self.assertEqual(
+            profile["match_history"][0]["opponent"],
+            "JugadorDos, JugadorTres",
+        )
+        self.assertEqual(profile["match_history"][0]["duration_seconds"], 75)
+        self.assertTrue(profile["match_history"][0]["new_record"])
+        self.assertEqual(
+            [row["name"] for row in self.repo.obtener_ranking()],
+            ["JugadorUno", "JugadorDos", "JugadorTres"],
+        )
+
+    def test_rejects_results_for_more_than_three_players(self):
+        self.repo.crear("uid-three", "JugadorTres", "three@example.test")
+        with self.assertRaisesRegex(ValueError, "entre dos y tres"):
+            self.repo.registrar_resultado_partida(
+                "match-too-many",
+                [
+                    {"uid": "uid-one", "score": 3, "result": "victoria"},
+                    {"uid": "uid-two", "score": 2, "result": "derrota"},
+                    {"uid": "uid-three", "score": 1, "result": "derrota"},
+                    {"uid": "uid-four", "score": 0, "result": "derrota"},
+                ],
+            )
 
     def test_ranking_ties_use_victories_then_username(self):
         matches = [
@@ -99,6 +144,7 @@ class SQLiteRepositoryTests(unittest.TestCase):
         self.assertEqual(profile["match_history"][0]["score"], 7)
         self.assertIsNone(profile["match_history"][0]["match_id"])
         self.assertEqual(profile["match_history"][0]["duration_seconds"], 0)
+        self.assertFalse(profile["match_history"][0]["new_record"])
         self.assertEqual(
             migrated.obtener_ranking(),
             [{"position": 1, "name": "JugadorAntiguo", "points": 7, "wins": 1}],

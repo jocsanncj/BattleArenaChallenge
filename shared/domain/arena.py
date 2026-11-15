@@ -161,6 +161,12 @@ class MapaArena:
         """
         columnas, filas = [c for c, _ in self._reactor], [f for _, f in self._reactor]
         return (min(columnas) + max(columnas)) / 2, (min(filas) + max(filas)) / 2
+    def junto_al_reactor(self, columna: int, fila: int) -> bool:
+        """Indica si una casilla transitable es adyacente al reactor."""
+        if not self.es_transitable(columna, fila):
+            return False
+        return any(abs(columna - reactor_col) + abs(fila - reactor_fila) == 1
+            for reactor_col, reactor_fila in self._reactor)
 
 
 # En el plano, los dígitos indican los puntos de inicio y R representa el reactor.

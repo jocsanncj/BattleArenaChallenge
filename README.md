@@ -2,7 +2,7 @@
 
 Videojuego multijugador de escritorio hecho con Python y Pygame (CE-1105 Principios de Modelado en Ingeniería, TEC).
 
-**Estado actual:** registro e inicio de sesión con Firebase y partida online para dos jugadores. El servidor valida los movimientos, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP. En la arena, el botón de acción del gamepad reproduce `Media/Efecto.mp3` como demostración de entrada física.
+**Estado actual:** registro e inicio de sesión con Firebase y partidas online para dos o tres jugadores. El servidor valida los movimientos y las extracciones del reactor, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP. Al consolidar el resultado, cada cliente abre una ceremonia con podio, duración, avatares y récords personales.
 
 La documentación de arquitectura y los diagramas compatibles con Azure DevOps Wiki están en [docs/Arquitectura-Azure-Wiki.md](docs/Arquitectura-Azure-Wiki.md).
 
@@ -257,7 +257,7 @@ Para ver la información de la cuenta, selecciona **Ver perfil**. Para salir de 
 
 ## 8. Jugar con teclado o mando
 
-Para una partida online se necesitan dos jugadores, cada uno en una computadora conectada al mismo servidor.
+Para una partida online se necesitan al menos dos jugadores y se admiten hasta tres; cada uno usa una computadora conectada al mismo servidor.
 
 1. En cada computadora, abre el juego e inicia sesión con una cuenta cuyo correo esté verificado.
 2. Selecciona **Jugar online** y elige un avatar.
@@ -269,11 +269,11 @@ Para una partida online se necesitan dos jugadores, cada uno en una computadora 
    - Izquierda: `A` o flecha izquierda.
    - Derecha: `D` o flecha derecha.
 6. Para usar un mando, conéctalo a la computadora donde está abierto el juego **antes de seleccionarlo**. En el panel de la arena, pulsa **Usar gamepad**. Usa la cruceta o la palanca izquierda para moverte.
-7. Con el modo gamepad seleccionado, pulsa el botón de acción (índice SDL `0`, normalmente **A**) para reproducir `Media/Efecto.mp3`. Es una demostración de que el juego recibe una acción física; por ahora no activa una mecánica de juego.
+7. Para extraer energía, colócate en una casilla junto al reactor y mantén `E` o, en modo gamepad, el botón de acción (índice SDL `0`, normalmente **A**) durante 1,5 segundos.
 8. El mensaje de confirmación muestra el nombre del mando detectado. Si el juego dice que no detecta un gamepad, vuelve a conectar el mando y pulsa **Usar gamepad** otra vez. El MSI FORCE GC30 V2 es el modelo de referencia; otros mandos pueden funcionar si el sistema los reconoce como gamepad.
 9. Para regresar al teclado, pulsa **Usar teclado**. Si el mando se desconecta durante la partida, el juego vuelve automáticamente al teclado.
 
-Cada movimiento válido lo procesa el servidor y puede sumar un punto. Los clientes comparten posiciones y puntajes; al terminar se muestra el resultado.
+El servidor procesa los movimientos, pero caminar no suma puntos. Una extracción válida junto al reactor suma un punto; después el reactor se recarga durante 4 segundos. Mientras un jugador extrae o el reactor se recarga, los demás no pueden extraer. El estado del reactor y los puntajes se comparten entre los clientes.
 
 La partida se actualiza mediante consultas HTTP periódicas, por lo que no requiere WebSockets ni abrir otro puerto. La sala y su configuración se conservan en el servidor; el estado activo de los movimientos y el temporizador reside en memoria del proceso servidor. Si se reinicia el contenedor durante una partida, esa partida activa se pierde y la sala se reinicia al siguiente acceso.
 

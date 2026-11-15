@@ -29,10 +29,8 @@ class PantallaArena(Pantalla):
         _partida (Partida) y _ultimo (int): última partida leída y momento de la lectura.
         _musica (Optional[pygame.mixer.Sound]): música en reproducción, o None.
     """
-
     TAM_CASILLA, ANCHO_PANEL, INTERVALO_MS = 32, 250, 500
     tecla_escape = "volver"
-
     def __init__(self, ctx: Contexto):
         """
         Descripción:
@@ -51,9 +49,9 @@ class PantallaArena(Pantalla):
         actions.iniciar()
         self.control_entrada = actions.ControlEntrada()
         self._ultimo_movimiento = -self.INTERVALO_MOVIMIENTO_MS
-
+        self._ultima_accion_id = None
+        self._interaccion_id = None
     INTERVALO_MOVIMIENTO_MS = 150
-
     def _alternar_control(self) -> None:
         if self.control_entrada.modo == actions.MODO_TECLADO:
             self.control_entrada.seleccionar(actions.MODO_GAMEPAD)
@@ -61,7 +59,6 @@ class PantallaArena(Pantalla):
         else:
             self.control_entrada.seleccionar(actions.MODO_TECLADO)
             self.exito("Teclado seleccionado.")
-
     def botones(self) -> List[Boton]:
         if self._partida.estado_juego and self._partida.estado_juego.get("status") == "finished":
             return []
@@ -76,13 +73,11 @@ class PantallaArena(Pantalla):
                 self._alternar_control,
             )
         ]
-
     def procesar_evento(self, evento: pygame.event.Event) -> None:
         self.control_entrada.procesar_evento(evento)
         if self.control_entrada.aviso:
             self.mensaje, self.color_mensaje = self.control_entrada.aviso, ERROR
             self.control_entrada.aviso = ""
-
     def _procesar_movimiento(self) -> None:
         juego = self._partida.estado_juego
         if not juego or juego.get("status") not in {"running", "overtime"}:
@@ -96,20 +91,34 @@ class PantallaArena(Pantalla):
             self.ctx.partida.mover(direccion)
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.mensaje, self.color_mensaje = str(error), ERROR
-
+    def _procesar_interaccion(self) -> None:
+        event_id = self.control_entrada.accion_id
+        if event_id is not None and event_id != self._ultima_accion_id:
+            self._ultima_accion_id = event_id
+            try:
+                self.ctx.partida.interactuar_reactor("start", event_id)
+                self._interaccion_id = event_id
+            except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                self.mensaje, self.color_mensaje = str(error), ERROR
+        elif event_id is None and self._interaccion_id is not None:
+            interaccion_id = self._interaccion_id
+            self._interaccion_id = None
+            try:
+                self.ctx.partida.interactuar_reactor("stop", interaccion_id)
+            except (ErrorApp, OSError, RuntimeError, ValueError) as error:
+                self.mensaje, self.color_mensaje = str(error), ERROR
     def ejecutar(self, superficie=None) -> str:
         """
         Descripción:
             Sobrescribe el ciclo base para abrir una ventana nueva para la arena.
-
             Pasos:
             1. Cierra la ventana anterior y vuelve a iniciar el módulo de video, de modo que
-               la arena aparezca en una ventana completamente nueva.
+            la arena aparezca en una ventana completamente nueva.
             2. Crea la ventana con el tamaño del mapa (columnas y filas por TAM_CASILLA) más
-               el ancho del panel lateral, y le pone título.
+            el ancho del panel lateral, y le pone título.
             3. Inicia la música.
             4. Ejecuta el ciclo común de Pantalla y, pase lo que pase, detiene la música al
-               terminar (bloque finally).
+            terminar (bloque finally).
         Entradas:
             superficie (pygame.Surface): se ignora; la arena crea su propia ventana.
         Salidas:
@@ -126,7 +135,6 @@ class PantallaArena(Pantalla):
         finally:
             if self._musica:
                 self._musica.stop()
-
     def actualizar(self) -> Optional[str]:
         """
         Descripción:
@@ -139,28 +147,35 @@ class PantallaArena(Pantalla):
         """
         ahora = pygame.time.get_ticks()
         self._procesar_movimiento()
+        self._procesar_interaccion()
         if ahora - self._ultimo >= self.INTERVALO_MS:
             self._ultimo, self._partida = ahora, self.ctx.partida.obtener_partida()
         return None
-
     def _dibujar_mapa(self, superficie: pygame.Surface) -> None:
         """
         Descripción:
             Dibuja el escenario casilla por casilla y sus elementos especiales.
-
             Pasos:
             1. Recorre la cuadrícula: muros en gris azulado, obstáculos en café con una X,
-               reactor en azul verdoso, y piso o inicio en oscuro con una cuadrícula fina.
+            reactor en azul verdoso, y piso o inicio en oscuro con una cuadrícula fina.
             2. Marca cada punto de inicio con un anillo del color de su jugador.
             3. Dibuja el reactor en el centro como dos círculos concéntricos.
             4. Dibuja un borde amarillo que señala el límite de la zona jugable (el interior
-               del muro).
+            del muro).
         Entradas:
             superficie (pygame.Surface): superficie donde se dibuja.
         Salidas:
             Ninguna.
         """
         T, m = self.TAM_CASILLA, self.mapa
+        juego = self._partida.estado_juego or {}
+        reactor = juego.get("reactor", {})
+        estado_reactor = reactor.get("status", "disponible")
+        color_reactor = {
+            "disponible": (60, 220, 230),
+            "ocupado": (255, 170, 60),
+            "recargando": (120, 130, 150),
+        }.get(estado_reactor, (60, 220, 230))
         for f in range(m.filas):
             for c in range(m.columnas):
                 casilla, rect = m.casilla_en(c, f), pygame.Rect(c * T, f * T, T, T)
@@ -179,19 +194,28 @@ class PantallaArena(Pantalla):
             pygame.draw.circle(superficie, COLORES_INICIO[i % 4], (c * T + T // 2, f * T + T // 2), T // 2 - 2, 2)
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
-        pygame.draw.circle(superficie, (60, 220, 230), centro, int(T * 1.4))
+        pygame.draw.circle(superficie, color_reactor, centro, int(T * 1.4))
         pygame.draw.circle(superficie, (230, 255, 255), centro, int(T * 0.6))
+        etiquetas_reactor = {"disponible": "REACTOR DISPONIBLE","ocupado": "REACTOR OCUPADO",
+        "recargando": f"RECARGA {reactor.get('remaining_seconds', 0):.1f} s",}
+        etiqueta_reactor = etiquetas_reactor.get(estado_reactor, "REACTOR DISPONIBLE")
+        fuente_reactor = pygame.font.Font(None, 20)
+        texto_reactor = fuente_reactor.render(etiqueta_reactor, True, (255, 255, 255))
+        superficie.blit(
+            texto_reactor,
+            texto_reactor.get_rect(
+                center=(centro[0], centro[1] + int(T * 1.5) + 10)
+            ),
+        )
         pygame.draw.rect(superficie, COLOR_LIMITE, pygame.Rect(T, T, (m.columnas - 2) * T, (m.filas - 2) * T), 3)
-
     def _temporizador(self):
         """
         Descripción:
             Calcula qué muestra el temporizador. Siempre corre, sin importar el modo de fin:
             - Si la partida termina por tiempo, muestra el tiempo restante (la duración
-              menos lo transcurrido, sin bajar de cero) con la etiqueta 'Tiempo restante'.
+            menos lo transcurrido, sin bajar de cero) con la etiqueta 'Tiempo restante'.
             - Si termina por puntos, muestra el tiempo transcurrido con la etiqueta 'Tiempo
-              transcurrido'.
-
+            transcurrido'.
             El tiempo se da en formato MM:SS.
         Entradas:
             Ninguna.
@@ -214,19 +238,17 @@ class PantallaArena(Pantalla):
         else:
             segundos, etiqueta = transcurrido, "Tiempo transcurrido"
         return etiqueta, f"{int(segundos) // 60:02d}:{int(segundos) % 60:02d}"
-
     def dibujar(self, superficie) -> None:
         """
         Descripción:
             Dibuja el cuadro completo de la arena.
-
             Pasos:
             1. Pinta el fondo y el mapa.
             2. Dibuja a cada jugador con su avatar sobre su punto de inicio; el jugador de
-               este programa lleva además un aro azul.
+            este programa lleva además un aro azul.
             3. Dibuja el panel lateral con la insignia del jugador, el estado ('Partida en
-               curso' o 'Esperando'), el temporizador, la configuración, la lista de jugadores
-               (marcando '(tú)') y la indicación 'ESC: salir'.
+            curso' o 'Esperando'), el temporizador, la configuración, la lista de jugadores
+            (marcando '(tú)') y la indicación 'ESC: salir'.
         Entradas:
             superficie (pygame.Surface): ventana de la arena.
         Salidas:
@@ -272,7 +294,7 @@ class PantallaArena(Pantalla):
         x = x0 + 14
         self.insignia.dibujar(superficie, (x, 12))
         mensaje_estado = (juego.get("message", "Partida en curso.") if juego else
-                          "Partida en curso" if p.estado == "jugando" else "Esperando")
+                        "Partida en curso" if p.estado == "jugando" else "Esperando")
         self.texto(superficie, mensaje_estado, (x, 74))
         etiqueta, valor = self._temporizador()
         self.texto(superficie, etiqueta, (x, 104))
@@ -289,9 +311,19 @@ class PantallaArena(Pantalla):
                 self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
             else:
                 indicacion = ("Gamepad: stick / cruceta" if
-                              self.control_entrada.modo == actions.MODO_GAMEPAD else
-                              "WASD / flechas: mover")
+                            self.control_entrada.modo == actions.MODO_GAMEPAD else
+                            "WASD / flechas: mover")
                 self.texto(superficie, indicacion, (x, superficie.get_height() - 44))
+                accion_indicacion = (
+                    "Botón A: extraer energía"
+                    if self.control_entrada.modo == actions.MODO_GAMEPAD
+                    else "E: extraer energía"
+                )
+                self.texto(
+                    superficie,
+                    accion_indicacion,
+                    (x, superficie.get_height() - 64),
+                )
                 self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         else:
             for i, j in enumerate(p.jugadores):
@@ -304,5 +336,5 @@ class PantallaArena(Pantalla):
             while self.fuente_chica.size(mensaje)[0] > self.ANCHO_PANEL - 28:
                 mensaje = mensaje[:-4] + "..."
             self.texto(superficie, mensaje, (x, superficie.get_height() - 130),
-                       self.fuente_chica, self.color_mensaje)
+                    self.fuente_chica, self.color_mensaje)
         self.dibujar_botones(superficie)
