@@ -684,12 +684,12 @@ class ServicioPartida:
         partida.estado, partida.iniciada_en = "jugando", time.time()
         self._repo.guardar(partida)
 
-    def mover(self, direccion: str) -> None:
-        """Solicita un movimiento al servidor; este valida y confirma la acción."""
+    def mover(self, direccion: str) -> dict:
+        """Solicita un movimiento al servidor y devuelve su confirmación o rechazo."""
         if not isinstance(self._repo, RepositorioPartidaOnline):
             raise ErrorApp("Los movimientos remotos requieren el servidor de juego.")
         try:
-            self._repo.mover_online(direccion)
+            return self._repo.mover_online(direccion)
         except (OSError, RuntimeError, ValueError) as error:
             raise ErrorApp(str(error)) from error
 

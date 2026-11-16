@@ -941,7 +941,9 @@ class PantallaArena(Pantalla):
             return
         self._ultimo_movimiento = ahora
         try:
-            self.ctx.partida.mover(direccion)
+            respuesta = self.ctx.partida.mover(direccion)
+            if isinstance(respuesta, dict) and respuesta.get("reason"):
+                self.mensaje, self.color_mensaje = respuesta["reason"], ERROR
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.mensaje, self.color_mensaje = str(error), ERROR
 
@@ -1023,6 +1025,29 @@ class PantallaArena(Pantalla):
                 else:
                     pygame.draw.rect(superficie, COLOR_PISO, rect)
                     pygame.draw.rect(superficie, COLOR_CUADRICULA, rect, 1)
+        juego = self._partida.estado_juego or {}
+        obstaculos = juego.get("obstacles", {})
+        for puerta in obstaculos.get("doors", []):
+            rect = pygame.Rect(puerta["x"] * T + 3, puerta["y"] * T + 3, T - 6, T - 6)
+            color = (65, 190, 125) if puerta.get("open") else (205, 75, 75)
+            pygame.draw.rect(superficie, color, rect, border_radius=5)
+            pygame.draw.rect(superficie, (235, 240, 245), rect, 2, border_radius=5)
+            if puerta.get("open"):
+                pygame.draw.line(superficie, (235, 240, 245),
+                                 (rect.left + 5, rect.centery),
+                                 (rect.right - 5, rect.centery), 3)
+            else:
+                pygame.draw.line(superficie, (235, 240, 245),
+                                 (rect.centerx, rect.top + 5),
+                                 (rect.centerx, rect.bottom - 5), 3)
+        fuente_trampa = pygame.font.SysFont(None, 16, bold=True)
+        for indice, trampa in enumerate(obstaculos.get("traps", []), start=1):
+            centro = (trampa["x"] * T + T // 2, trampa["y"] * T + T // 2)
+            color = tuple(trampa.get("color", (210, 100, 180)))
+            pygame.draw.circle(superficie, color, centro, T // 2 - 3)
+            pygame.draw.circle(superficie, (245, 245, 250), centro, T // 2 - 3, 2)
+            etiqueta = fuente_trampa.render(str(indice), True, (255, 255, 255))
+            superficie.blit(etiqueta, etiqueta.get_rect(center=centro))
         for i, (c, f) in enumerate(m.puntos_inicio()):
             pygame.draw.circle(superficie, COLORES_INICIO[i % 4], (c * T + T // 2, f * T + T // 2), T // 2 - 2, 2)
         cx, cy = m.centro_reactor()
@@ -1084,6 +1109,7 @@ class PantallaArena(Pantalla):
         superficie.fill(FONDO)
         self._dibujar_mapa(superficie)
         juego = p.estado_juego
+        obstaculos = juego.get("obstacles", {}) if juego else {}
         if juego:
             jugadores_dibujo = []
             imagenes_avatar = {}
@@ -1107,6 +1133,17 @@ class PantallaArena(Pantalla):
             )
             if posicion_local:
                 pygame.draw.circle(superficie, ACENTO, posicion_local, T // 2, 2)
+            fuente_estado = pygame.font.SysFont(None, 16, bold=True)
+            for jugador in jugadores_dibujo:
+                if jugador.get("frozen"):
+                    centro = (jugador["x"], jugador["y"])
+                    pygame.draw.circle(superficie, (245, 165, 65), centro, T // 2, 3)
+                    etiqueta = fuente_estado.render(
+                        f"{jugador.get('trap_effect', 'Inmovilizado')} "
+                        f"{jugador.get('frozen_remaining', 0):.1f}s",
+                        True, (255, 220, 150)
+                    )
+                    superficie.blit(etiqueta, etiqueta.get_rect(midtop=(centro[0], centro[1] + T // 2)))
         else:
             for j in p.jugadores:
                 c, f = m.puntos_inicio()[j.indice_inicio]
@@ -1127,6 +1164,9 @@ class PantallaArena(Pantalla):
         self.texto(superficie, valor, (x, 124), self.fuente_grande)
         for i, linea in enumerate(describir_configuracion(p.configuracion)):
             self.texto(superficie, linea, (x, 184 + i * 22))
+        if obstaculos.get("traps"):
+            self.texto(superficie, "Puertas: verde abierta / rojo cerrada", (x, 154), self.fuente_chica)
+            self.texto(superficie, "Trampas: 1 Jaula  2 Arenas  3 Pulso", (x, 169), self.fuente_chica)
         self.texto(superficie, "Jugadores", (x, 244), self.fuente)
         if juego:
             for i, jugador in enumerate(juego.get("players", [])):
