@@ -14,7 +14,6 @@ from backend.repository import (DuplicateEmail, DuplicateUsername, RepositoryErr
 from logica import ARENA_PREDETERMINADA
 from us10 import MultiplayerArena
 from us16 import GameRules
-from us20 import ObstaculosArena
 
 app = Flask(__name__)
 datos = Path(os.getenv("DATA_DIR", Path(__file__).parent / "data"))
@@ -108,7 +107,6 @@ def guardar_perfil(claims):
 _GAME_FILE = datos / "partida_online.json"
 _GAME_LOCK = threading.RLock()
 _GAME_ARENA = None
-_GAME_OBSTACLES = None
 _GAME_USERS = {}
 _GAME_PLAYER_IDS = {}
 _MOVE_TIMES = {}
@@ -170,19 +168,12 @@ def _estado_arena():
         jugador["user_id"] = _GAME_PLAYER_IDS[jugador["player_id"]]
         jugadores.append(jugador)
     estado["players"] = jugadores
-    if _GAME_OBSTACLES is not None:
-        obstaculos = _GAME_OBSTACLES.estado()
-        estado["obstacles"] = obstaculos
-        for jugador in jugadores:
-            jugador.update(obstaculos["players"].get(jugador["player_id"], {
-                "frozen": False, "trap_effect": None, "frozen_remaining": 0.0
-            }))
     if estado.get("winner_id") is not None:
         estado["winner_user_id"] = _GAME_PLAYER_IDS.get(estado["winner_id"])
     return estado
 
 def _iniciar_arena(partida):
-    global _GAME_ARENA, _GAME_OBSTACLES, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES
+    global _GAME_ARENA, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES
     jugadores = partida.get("jugadores", [])
     if len(jugadores) != 2:
         raise ValueError("Se necesitan exactamente dos jugadores para iniciar la partida.")
@@ -212,7 +203,6 @@ def _iniciar_arena(partida):
         arena.join_player(player_id, player_id, jugador["nombre_usuario"], avatar_id, x, y)
     arena.begin_match()
     _GAME_ARENA = arena
-    _GAME_OBSTACLES = ObstaculosArena(ARENA_PREDETERMINADA)
 
 @app.get("/api/game/avatar")
 @requiere_sesion
@@ -267,7 +257,7 @@ def unirse_partida_juego(claims):
     """Une al usuario autenticado a la sala; la identidad nunca se toma del cuerpo HTTP."""
     user_id, player_id, nombre = _validar_jugador(claims)
     with _GAME_LOCK:
-        global _GAME_ARENA, _GAME_OBSTACLES
+        global _GAME_ARENA
         estado = _leer_estado_juego()
         partida = estado["partida"]
         if _GAME_ARENA is None and partida.get("estado") == "jugando":
@@ -276,7 +266,6 @@ def unirse_partida_juego(claims):
         juego = _estado_arena()
         if juego and juego["status"] == "finished":
             _GAME_ARENA = None
-            _GAME_OBSTACLES = None
             partida = _partida_vacia()
             estado["partida"] = partida
         if _GAME_ARENA is not None:
@@ -317,7 +306,7 @@ def salir_partida_juego(claims):
     """Retira al jugador autenticado; una desconexión durante la partida la pausa."""
     user_id, player_id, _ = _validar_jugador(claims)
     with _GAME_LOCK:
-        global _GAME_ARENA, _GAME_OBSTACLES
+        global _GAME_ARENA
         estado = _leer_estado_juego()
         partida = estado["partida"]
         if _GAME_ARENA is not None:
@@ -325,7 +314,6 @@ def salir_partida_juego(claims):
             jugadores = _GAME_ARENA.snapshot()["players"]
             if all(not jugador["connected"] for jugador in jugadores):
                 _GAME_ARENA = None
-                _GAME_OBSTACLES = None
                 estado["partida"] = _partida_vacia()
                 _guardar_estado_juego(estado)
             return {"ok": True}
@@ -418,24 +406,14 @@ def mover_jugador_juego(claims):
             return {"ok": False, "state": _estado_arena()}
         dx, dy = direcciones[direccion]
         x, y = int(jugador["x"]) + dx, int(jugador["y"]) + dy
-        if _GAME_OBSTACLES is not None:
-            permitido, motivo = _GAME_OBSTACLES.puede_mover(player_id, x, y, ahora)
-            if not permitido:
-                return {"ok": False, "reason": motivo, "state": _estado_arena()}
-        elif not ARENA_PREDETERMINADA.es_transitable(x, y):
-            return {"ok": False, "reason": "Una barrera u obstáculo impide el paso.",
-                    "state": _estado_arena()}
+        if not ARENA_PREDETERMINADA.es_transitable(x, y):
+            return {"ok": False, "state": _estado_arena()}
         if any(p["player_id"] != player_id and p["x"] == x and p["y"] == y
                for p in estado["players"]):
-            return {"ok": False, "reason": "Otro jugador ocupa esa posición.",
-                    "state": _estado_arena()}
-        movimiento_valido = _GAME_ARENA.confirm_movement(player_id, x, y)
-        if movimiento_valido and _GAME_OBSTACLES is not None:
-            estado_actual = _GAME_ARENA.snapshot()
-            if estado_actual.get("status") in {"running", "overtime"}:
-                _GAME_OBSTACLES.registrar_entrada(player_id, x, y, ahora)
+            return {"ok": False, "state": _estado_arena()}
+        _GAME_ARENA.confirm_movement(player_id, x, y)
         _MOVE_TIMES[player_id] = ahora
-        return {"ok": bool(movimiento_valido), "state": _estado_arena()}
+        return {"ok": True, "state": _estado_arena()}
 
 if __name__ == "__main__":
     app.run(host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8000")))

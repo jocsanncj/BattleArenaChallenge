@@ -472,9 +472,9 @@ class RepositorioPartidaServidor(RepositorioPartida):
         cliente, token = self._cliente_token()
         cliente.iniciar_partida(token)
 
-    def mover_online(self, direccion: str) -> dict:
+    def mover_online(self, direccion: str) -> None:
         cliente, token = self._cliente_token()
-        return cliente.mover_jugador(token, direccion)
+        cliente.mover_jugador(token, direccion)
 
 
 @runtime_checkable
@@ -484,4 +484,4 @@ class RepositorioPartidaOnline(Protocol):
     def unirse_online(self) -> None: ...
     def salir_online(self) -> None: ...
     def iniciar_online(self) -> None: ...
-    def mover_online(self, direccion: str) -> dict: ...
+    def mover_online(self, direccion: str) -> None: ...
