@@ -84,7 +84,9 @@ class RepositorioPartidaServidor(RepositorioPartida):
         cliente.iniciar_partida(token)
     def mover_online(self, direccion: str) -> None:
         cliente, token = self._cliente_token()
-        cliente.mover_jugador(token, direccion)
+        respuesta = cliente.mover_jugador(token, direccion)
+        if isinstance(respuesta, dict) and respuesta.get("error"):
+            raise ValueError(respuesta["error"])
     def interaccion_reactor_online(self, accion: str, event_id: str) -> None:
         cliente, token = self._cliente_token()
         cliente.interactuar_reactor(token, accion, event_id)

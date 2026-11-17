@@ -192,6 +192,32 @@ class PantallaArena(Pantalla):
                     pygame.draw.rect(superficie, COLOR_CUADRICULA, rect, 1)
         for i, (c, f) in enumerate(m.puntos_inicio()):
             pygame.draw.circle(superficie, COLORES_INICIO[i % 4], (c * T + T // 2, f * T + T // 2), T // 2 - 2, 2)
+
+        # Los obstáculos dinámicos proceden exclusivamente del estado enviado por el servidor.
+        obstaculos = juego.get("obstaculos", {})
+        for puerta in obstaculos.get("puertas", []):
+            rect = pygame.Rect(puerta["x"] * T + 3, puerta["y"] * T + 3, T - 6, T - 6)
+            color = (55, 205, 115) if puerta.get("abierta") else (220, 65, 65)
+            pygame.draw.rect(superficie, color, rect, border_radius=5)
+            pygame.draw.rect(superficie, (245, 245, 245), rect, 2, border_radius=5)
+            marca = pygame.font.Font(None, 20).render("P", True, (255, 255, 255))
+            superficie.blit(marca, marca.get_rect(center=rect.center))
+        colores_trampas = {
+            "jaula": (230, 180, 55),
+            "arenas_movedizas": (165, 115, 65),
+            "campo_electrico": (160, 90, 230),
+        }
+        marcas_trampas = {"jaula": "J", "arenas_movedizas": "A", "campo_electrico": "E"}
+        for trampa in obstaculos.get("trampas", []):
+            if not trampa.get("activa", True):
+                continue
+            centro_trampa = (trampa["x"] * T + T // 2, trampa["y"] * T + T // 2)
+            pygame.draw.circle(superficie, colores_trampas.get(trampa["tipo"], (230, 90, 90)),
+                               centro_trampa, T // 2 - 3)
+            marca = pygame.font.Font(None, 20).render(
+                marcas_trampas.get(trampa["tipo"], "!"), True, (255, 255, 255))
+            superficie.blit(marca, marca.get_rect(center=centro_trampa))
+
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
         pygame.draw.circle(superficie, color_reactor, centro, int(T * 1.4))
@@ -307,6 +333,18 @@ class PantallaArena(Pantalla):
                 user_id = jugador["user_id"]
                 superficie.blit(self.ctx.avatares.obtener_superficie(user_id, 28), (x, 274 + i * 44))
             draw_scores(superficie, juego, position=(x + 36, 281))
+            jugador_local = next((j for j in juego.get("players", [])
+                                  if j.get("user_id") == self.ctx.id_usuario), None)
+            if jugador_local and jugador_local.get("estado_temporal") == "inmovilizado":
+                restante = jugador_local.get("segundos_inmovilizado", 0)
+                self.texto(superficie, f"INMOVILIZADO: {restante:.1f} s",
+                           (x, 370), self.fuente, (255, 130, 90))
+                self.texto(superficie, jugador_local.get("mensaje_obstaculo", "Trampa activada"),
+                           (x, 392), self.fuente_chica, (255, 190, 130))
+            self.texto(superficie, "Puerta: verde abierta / roja cerrada", (x, 420),
+                       self.fuente_chica, (190, 205, 220))
+            self.texto(superficie, "Trampas: J jaula / A arenas / E electricidad", (x, 438),
+                       self.fuente_chica, (190, 205, 220))
             if juego.get("status") == "finished":
                 self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
             else:

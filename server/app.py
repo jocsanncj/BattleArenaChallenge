@@ -14,6 +14,7 @@ from backend.repository import (DuplicateEmail, DuplicateUsername, RepositoryErr
 from shared.domain import ARENA_PREDETERMINADA
 from shared.game.arena import MultiplayerArena
 from shared.game.rules import GameRules
+from shared.game.obstacles import GestorObstaculos
 
 app = Flask(__name__)
 
@@ -121,6 +122,7 @@ def obtener_ranking():
 _GAME_FILE = datos / "partida_online.json"
 _GAME_LOCK = threading.RLock()
 _GAME_ARENA = None
+_GAME_OBSTACULOS = None
 _GAME_USERS = {}
 _GAME_PLAYER_IDS = {}
 _MOVE_TIMES = {}
@@ -255,6 +257,14 @@ def _estado_arena():
         _actualizar_reactor(estado, ahora)
         estado = _GAME_ARENA.tick(ahora)
     estado["reactor"] = _estado_reactor(ahora)
+    if _GAME_OBSTACULOS is not None:
+        estado["obstaculos"] = _GAME_OBSTACULOS.estado_publico(ahora)
+        for jugador in estado.get("players", []):
+            estado_jugador = _GAME_OBSTACULOS.estado_jugador(jugador["player_id"], ahora)
+            jugador["estado_temporal"] = estado_jugador["estado"]
+            jugador["efecto_trampa"] = estado_jugador["efecto"]
+            jugador["segundos_inmovilizado"] = estado_jugador["segundos_restantes"]
+            jugador["mensaje_obstaculo"] = estado_jugador["mensaje"]
     _persistir_resultado_partida(estado)
     jugadores = []
     for jugador in estado.get("players", []):
@@ -266,7 +276,7 @@ def _estado_arena():
     return estado
 
 def _iniciar_arena(partida):
-    global _GAME_ARENA, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
+    global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
     jugadores = partida.get("jugadores", [])
     if not 2 <= len(jugadores) <= 3:
         raise ValueError("La partida requiere dos o tres jugadores.")
@@ -281,6 +291,10 @@ def _iniciar_arena(partida):
     )
     arena = MultiplayerArena(lambda _estado: None, rules=reglas)
     _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES = {}, {}, {}
+    _GAME_OBSTACULOS = GestorObstaculos(
+        ARENA_PREDETERMINADA, ARENA_PREDETERMINADA.puntos_inicio()[:len(jugadores)],
+        segundos_inmovilizacion=configuracion.get("segundos_congelacion", 3),
+    )
     _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
     posiciones = ARENA_PREDETERMINADA.puntos_inicio()[:3]
     estado = _leer_estado_juego()
@@ -554,17 +568,26 @@ def mover_jugador_juego(claims):
         if not estado["active"]:
             raise ValueError("La partida está en pausa o ya terminó.")
         ahora = time.monotonic()
+        if _GAME_OBSTACULOS is not None and _GAME_OBSTACULOS.jugador_inmovil(player_id, ahora):
+            detalle = _GAME_OBSTACULOS.estado_jugador(player_id, ahora)
+            return {"ok": False, "error": detalle["mensaje"], "state": _estado_arena()}
         ultimo_movimiento = _MOVE_TIMES.get(player_id)
         if ultimo_movimiento is not None and ahora - ultimo_movimiento < 0.12:
             return {"ok": False, "state": _estado_arena()}
         dx, dy = direcciones[direccion]
         x, y = int(jugador["x"]) + dx, int(jugador["y"]) + dy
-        if not ARENA_PREDETERMINADA.es_transitable(x, y):
-            return {"ok": False, "state": _estado_arena()}
+        if _GAME_OBSTACULOS is not None:
+            movimiento_valido, motivo = _GAME_OBSTACULOS.validar_movimiento(player_id, x, y, ahora)
+            if not movimiento_valido:
+                return {"ok": False, "error": motivo, "state": _estado_arena()}
+        elif not ARENA_PREDETERMINADA.es_transitable(x, y):
+            return {"ok": False, "error": "No puedes atravesar esa barrera.", "state": _estado_arena()}
         if any(p["player_id"] != player_id and p["x"] == x and p["y"] == y
                for p in estado["players"]):
-            return {"ok": False, "state": _estado_arena()}
+            return {"ok": False, "error": "Otro jugador ocupa esa casilla.", "state": _estado_arena()}
         _GAME_ARENA.confirm_movement(player_id, x, y)
+        if _GAME_OBSTACULOS is not None:
+            _GAME_OBSTACULOS.activar_trampa(player_id, x, y, ahora)
         _MOVE_TIMES[player_id] = ahora
         return {"ok": True, "state": _estado_arena()}
 
