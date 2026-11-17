@@ -1,0 +1,65 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  pythonVersion: '3.12'
+  SDL_VIDEODRIVER: 'dummy'
+  SDL_AUDIODRIVER: 'dummy'
+  PYGAME_HIDE_SUPPORT_PROMPT: '1'
+
+steps:
+  - checkout: self
+
+  - task: UsePythonVersion@0
+    displayName: 'Configurar Python $(pythonVersion)'
+    inputs:
+      versionSpec: '$(pythonVersion)'
+      addToPath: true
+
+  - script: |
+      python -m pip install --upgrade pip
+      python -m pip install -r requirements.txt
+      python -m pip install pytest
+    displayName: 'Instalar dependencias y pytest'
+
+  - script: |
+      python - <<'PY'
+      import ast
+      from pathlib import Path
+
+      excluded = {'.git', '.venv', 'venv', '__pycache__', '.pytest_cache'}
+      files = [p for p in Path('.').rglob('*.py') if not any(part in excluded for part in p.parts)]
+      for path in files:
+          ast.parse(path.read_text(encoding='utf-8-sig'), filename=str(path))
+      print(f'Sintaxis correcta: {len(files)} archivos Python.')
+      PY
+    displayName: 'Validar sintaxis de Python'
+
+  - script: |
+      mkdir -p test-results
+      python -m pytest tests/ -v --junitxml=test-results/pytest.xml
+    displayName: 'Ejecutar pruebas automatizadas'
+    env:
+      SDL_VIDEODRIVER: $(SDL_VIDEODRIVER)
+      SDL_AUDIODRIVER: $(SDL_AUDIODRIVER)
+      PYGAME_HIDE_SUPPORT_PROMPT: $(PYGAME_HIDE_SUPPORT_PROMPT)
+
+  - task: PublishTestResults@2
+    displayName: 'Publicar resultados de pruebas'
+    condition: always()
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: 'test-results/pytest.xml'
+      failTaskOnFailedTests: true
+      failTaskOnMissingResultsFile: true
+      testRunTitle: 'BattleArenaChallenge - pytest'
