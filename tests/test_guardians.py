@@ -88,5 +88,99 @@ class PruebasGuardianes(unittest.TestCase):
                 2,
             )
 
+    # ---- Regresión: casillas compartidas, campeo e inmunidad ----------------
+    def _jugadores_en(self, *posiciones):
+        return [{"player_id": f"p{i}", "x": x, "y": y, "connected": True}
+                for i, (x, y) in enumerate(posiciones)]
+
+    def test_guardianes_nunca_comparten_casilla_con_jugadores_ni_entre_si(self):
+        import random
+        azar = random.Random(3)
+        jugadores = self._jugadores_en((1, 1), (11, 7), (1, 7))
+        for _ in range(400):
+            self.ahora += 0.9
+            for j in jugadores:  # los jugadores se mueven libremente, sin pisar guardianes
+                dx, dy = azar.choice([(1, 0), (-1, 0), (0, 1), (0, -1), (0, 0)])
+                x, y = j["x"] + dx, j["y"] + dy
+                if (self.mapa.es_transitable(x, y) and (x, y) not in self.guardianes.posiciones()
+                        and all((o["x"], o["y"]) != (x, y) for o in jugadores if o is not j)):
+                    j["x"], j["y"] = x, y
+            self.guardianes.actualizar(jugadores, self.ahora)
+            posiciones = [(g["x"], g["y"]) for g in self.guardianes.guardianes]
+            self.assertEqual(len(posiciones), len(set(posiciones)), "guardianes apilados")
+            for j in jugadores:
+                self.assertNotIn((j["x"], j["y"]), posiciones, "guardián sobre un jugador")
+
+    def test_no_campea_a_un_jugador_congelado_ni_inmune(self):
+        self.obstaculos.aplicar_congelamiento("p0", 30, self.ahora, segundos_inmunidad=30)
+        jugadores = self._jugadores_en((6, 2))
+        seguidas, maximo = 0, 0
+        for _ in range(60):
+            self.ahora += 0.9
+            self.guardianes.actualizar(jugadores, self.ahora)
+            pegado = any(abs(g["x"] - 6) + abs(g["y"] - 2) <= 1
+                         for g in self.guardianes.guardianes)
+            seguidas = seguidas + 1 if pegado else 0
+            maximo = max(maximo, seguidas)
+        self.assertLessEqual(maximo, 2)
+
+    def test_persigue_al_jugador_disponible_mas_cercano(self):
+        jugadores = self._jugadores_en((2, 6), (11, 1))
+        self.guardianes.actualizar(jugadores, self.ahora + 1.0)
+        perseguidor = self.guardianes.guardianes[0]
+        self.assertIn(perseguidor["objetivo"], {"p0", "p1"})
+
+    def test_guardian_congela_desde_casilla_adyacente_sin_pisar_al_jugador(self):
+        g = self.guardianes.guardianes[0]
+        jugador = {"player_id": "p0", "x": g["x"] + 1, "y": g["y"], "connected": True}
+        self.guardianes.actualizar([jugador], self.ahora + 1.0)
+        self.assertEqual(self.obstaculos.estado_jugador("p0", self.ahora + 1.0)["estado"], "congelado")
+        self.assertNotEqual((g["x"], g["y"]), (jugador["x"], jugador["y"]))
+
+    def test_inmunidad_tras_descongelarse_y_luego_vuelve_a_ser_vulnerable(self):
+        g = self.guardianes.guardianes[0]
+        jugador = {"player_id": "p0", "x": g["x"] + 1, "y": g["y"], "connected": True}
+        t0 = self.ahora + 1.0
+        self.guardianes.actualizar([jugador], t0)
+        self.assertEqual(self.obstaculos.estado_jugador("p0", t0)["estado"], "congelado")
+        # Termina el congelamiento (3 s): comienza la inmunidad (3 s).
+        t1 = t0 + 3.1
+        estado = self.obstaculos.estado_jugador("p0", t1)
+        self.assertEqual(estado["estado"], "normal")
+        self.assertTrue(self.obstaculos.esta_inmune("p0", t1))
+        # Con un guardián pegado al jugador durante la inmunidad NO se congela.
+        for guardian in self.guardianes.guardianes:
+            guardian["x"], guardian["y"] = 1, 1  # se reubicarán; se colocan junto al jugador:
+        self.guardianes.guardianes[0]["x"] = jugador["x"] + 1
+        self.guardianes.guardianes[0]["y"] = jugador["y"]
+        self.guardianes.guardianes[1]["x"], self.guardianes.guardianes[1]["y"] = jugador["x"], jugador["y"] + 1
+        for i in range(2, 4):
+            self.guardianes.guardianes[i]["x"], self.guardianes.guardianes[i]["y"] = 1 + i, 7
+        t2 = t1 + 1.0
+        self.guardianes.actualizar([jugador], t2)
+        self.assertNotEqual(self.obstaculos.estado_jugador("p0", t2)["estado"], "congelado")
+        # Tras la inmunidad vuelve a ser vulnerable.
+        t3 = t1 + 3.2
+        self.assertFalse(self.obstaculos.esta_inmune("p0", t3))
+        res = self.obstaculos.aplicar_congelamiento("p0", 3, t3)
+        self.assertEqual(res["estado"], "congelado")
+
+    def test_aplicar_congelamiento_directo_respeta_inmunidad(self):
+        self.obstaculos.aplicar_congelamiento("p0", 3, self.ahora)
+        t = self.ahora + 3.5  # ya descongelado, dentro de la inmunidad
+        res = self.obstaculos.aplicar_congelamiento("p0", 3, t)
+        self.assertEqual(res["estado"], "normal")
+
+    def test_trampa_no_borra_la_inmunidad(self):
+        self.obstaculos.aplicar_congelamiento("p0", 3, self.ahora)
+        t = self.ahora + 3.5
+        trampa = self.obstaculos.trampas[0]
+        self.obstaculos.activar_trampa("p0", trampa.x, trampa.y, t)
+        self.assertGreater(self.obstaculos.estado_jugador("p0", t)["segundos_inmunidad"], 0)
+        # Al terminar la trampa la inmunidad restante sigue vigente.
+        self.assertTrue(self.obstaculos.esta_inmune("p0", t + 1.0)
+                        or self.obstaculos.estado_jugador("p0", t + 1.0)["estado"] == "inmovilizado")
+
+
 if __name__ == "__main__":
     unittest.main()

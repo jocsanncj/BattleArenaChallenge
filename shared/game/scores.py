@@ -29,6 +29,26 @@ class Scoreboard:
             raise ValueError("El jugador no está registrado en el marcador.")
         self._scores[player_id] += 1
         return self._scores[player_id]
+    def add_points(self, player_id: str, points: int) -> int:
+        """Agrega puntos de un evento especial a un jugador registrado."""
+        self._validate_id(player_id)
+        if player_id not in self._scores:
+            raise ValueError("El jugador no está registrado en el marcador.")
+        if type(points) is not int or points < 0:
+            raise ValueError("Los puntos deben ser un entero no negativo.")
+        self._scores[player_id] += points
+        return self._scores[player_id]
+
+    def remove_points(self, player_id: str, points: int = 1) -> int:
+        """Resta puntos sin permitir que el marcador quede por debajo de cero."""
+        self._validate_id(player_id)
+        if player_id not in self._scores:
+            raise ValueError("El jugador no está registrado en el marcador.")
+        if type(points) is not int or points < 0:
+            raise ValueError("Los puntos deben ser un entero no negativo.")
+        self._scores[player_id] = max(0, self._scores[player_id] - points)
+        return self._scores[player_id]
+
     def scores(self) -> dict[str, int]:
         """
         Devuelve una copia para evitar que quien llama modifique accidentalmente los puntos internos.

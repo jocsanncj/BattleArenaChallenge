@@ -175,6 +175,7 @@ class PantallaArena(Pantalla):
             "disponible": (60, 220, 230),
             "ocupado": (255, 170, 60),
             "recargando": (120, 130, 150),
+            "sobrecargado": (230, 65, 65),
         }.get(estado_reactor, (60, 220, 230))
         for f in range(m.filas):
             for c in range(m.columnas):
@@ -218,6 +219,26 @@ class PantallaArena(Pantalla):
                 marcas_trampas.get(trampa["tipo"], "!"), True, (255, 255, 255))
             superficie.blit(marca, marca.get_rect(center=centro_trampa))
 
+        # US-22.1: energía adicional enviada por el servidor.
+        energia = juego.get("energia_adicional")
+        if energia:
+            centro_energia = (
+                int(energia["x"]) * T + T // 2,
+                int(energia["y"]) * T + T // 2,
+            )
+            pygame.draw.circle(superficie, (255, 220, 70), centro_energia, T // 2 - 2)
+            pygame.draw.circle(superficie, (255, 255, 220), centro_energia, T // 2 - 2, 2)
+            pygame.draw.line(
+                superficie, (110, 75, 15),
+                (centro_energia[0] - 6, centro_energia[1]),
+                (centro_energia[0] + 6, centro_energia[1]), 3,
+            )
+            pygame.draw.line(
+                superficie, (110, 75, 15),
+                (centro_energia[0], centro_energia[1] - 6),
+                (centro_energia[0], centro_energia[1] + 6), 3,
+            )
+
         # US-21: guardianes con silueta propia, ojos y dirección hacia su objetivo.
         # La posición procede siempre del servidor; no se simula persecución en el cliente.
         for guardian in juego.get("guardianes", []):
@@ -238,8 +259,12 @@ class PantallaArena(Pantalla):
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
         pygame.draw.circle(superficie, color_reactor, centro, int(T * 1.4))
         pygame.draw.circle(superficie, (230, 255, 255), centro, int(T * 0.6))
-        etiquetas_reactor = {"disponible": "REACTOR DISPONIBLE","ocupado": "REACTOR OCUPADO",
-        "recargando": f"RECARGA {reactor.get('remaining_seconds', 0):.1f} s",}
+        etiquetas_reactor = {
+            "disponible": "REACTOR DISPONIBLE",
+            "ocupado": "REACTOR OCUPADO",
+            "recargando": f"RECARGA {reactor.get('remaining_seconds', 0):.1f} s",
+            "sobrecargado": "REACTOR SOBRECARGADO",
+        }
         etiqueta_reactor = etiquetas_reactor.get(estado_reactor, "REACTOR DISPONIBLE")
         fuente_reactor = pygame.font.Font(None, 20)
         texto_reactor = fuente_reactor.render(etiqueta_reactor, True, (255, 255, 255))
@@ -281,6 +306,70 @@ class PantallaArena(Pantalla):
         else:
             segundos, etiqueta = transcurrido, "Tiempo transcurrido"
         return etiqueta, f"{int(segundos) // 60:02d}:{int(segundos) % 60:02d}"
+    def _dibujar_indicadores_eventos(self, superficie: pygame.Surface, juego: dict) -> None:
+        """Muestra sobre la arena los eventos que están afectando la partida."""
+        eventos = juego.get("eventos", []) or []
+        proximo_evento = juego.get("proximo_evento")
+        if not eventos and not proximo_evento:
+            return
+
+        nombres = {
+            "guardianes_adicionales": "5 GUARDIANES ADICIONALES",
+            "guardianes_quitan_puntos": "LOS GUARDIANES QUITAN PUNTOS",
+            "doble_trampas": "DOBLE DE TRAMPAS",
+            "sobrecarga_1": "SOBRECARGA DEL REACTOR",
+            "sobrecarga_2": "SOBRECARGA DEL REACTOR",
+            "energia_1": "ENERGIA ADICIONAL DISPONIBLE",
+            "energia_2": "ENERGIA ADICIONAL DISPONIBLE",
+            "energia_3": "ENERGIA ADICIONAL DISPONIBLE",
+            # Las rondas posteriores usan ids nuevos; el servidor envía también el tipo.
+            "energia": "ENERGIA ADICIONAL DISPONIBLE",
+            "sobrecarga": "SOBRECARGA DEL REACTOR",
+        }
+        ancho_mapa = self.mapa.columnas * self.TAM_CASILLA
+        x, y = 8, 8
+        ancho = min(340, ancho_mapa - 16)
+        alto_fila = 27
+        filas = len(eventos) if eventos else 1
+        alto = 27 + filas * alto_fila
+        panel = pygame.Surface((ancho, alto), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (18, 25, 39, 225), panel.get_rect(), border_radius=7)
+        pygame.draw.rect(panel, (255, 190, 70, 255), panel.get_rect(), 2, border_radius=7)
+        encabezado = self.fuente_chica.render(
+            "ESTÁS BAJO LOS EFECTOS DE:", True, (255, 210, 105)
+        )
+        panel.blit(encabezado, (8, 5))
+
+        if eventos:
+            for indice, evento in enumerate(eventos):
+                identificador = evento.get("id", evento.get("nombre", ""))
+                nombre = nombres.get(evento.get("tipo")) or nombres.get(
+                    identificador, evento.get("mensaje", "EVENTO ACTIVO"))
+                restante = max(0.0, float(evento.get("segundos_restantes", 0)))
+                linea = f"• {nombre}  ({restante:.1f} s)"
+                texto = self.fuente_chica.render(linea, True, (245, 245, 245))
+                panel.blit(texto, (8, 27 + indice * alto_fila))
+        else:
+            restante = max(0.0, float(proximo_evento.get("segundos_restantes", 0)))
+            linea = f"PRÓXIMO EVENTO EN {restante:.1f} s"
+            texto = self.fuente_chica.render(linea, True, (245, 245, 245))
+            panel.blit(texto, (8, 27))
+
+        superficie.blit(panel, (x, y))
+
+        # CA-22.5: al iniciar un evento se anuncia su efecto con un aviso grande.
+        recientes = [e for e in eventos
+                     if float(e.get("segundos_transcurridos", 99)) < 4.0 and e.get("mensaje")]
+        if recientes:
+            evento = max(recientes, key=lambda e: -float(e.get("segundos_transcurridos", 0)))
+            texto = self.fuente.render(evento["mensaje"], True, (255, 235, 150))
+            ancho_aviso = min(ancho_mapa - 16, texto.get_width() + 28)
+            aviso = pygame.Surface((ancho_aviso, texto.get_height() + 18), pygame.SRCALPHA)
+            pygame.draw.rect(aviso, (20, 20, 35, 235), aviso.get_rect(), border_radius=8)
+            pygame.draw.rect(aviso, (255, 190, 70, 255), aviso.get_rect(), 2, border_radius=8)
+            aviso.blit(texto, ((ancho_aviso - texto.get_width()) // 2, 9))
+            superficie.blit(aviso, ((ancho_mapa - ancho_aviso) // 2, y + alto + 8))
+
     def dibujar(self, superficie) -> None:
         """
         Descripción:
@@ -341,6 +430,8 @@ class PantallaArena(Pantalla):
                 if j.id_usuario == self.ctx.id_usuario:
                     pygame.draw.circle(superficie, ACENTO,
                                        (c * T + T // 2, f * T + T // 2), T // 2, 2)
+        if juego:
+            self._dibujar_indicadores_eventos(superficie, juego)
         x0 = m.columnas * T
         pygame.draw.rect(superficie, PANEL, (x0, 0, self.ANCHO_PANEL, superficie.get_height()))
         x = x0 + 14
@@ -380,6 +471,11 @@ class PantallaArena(Pantalla):
                 pygame.draw.rect(superficie, (45, 55, 75), (x, 330, self.ANCHO_PANEL - 28, 48), border_radius=6)
                 self.texto(superficie, f"{estado_texto} · {restante:.1f} s",
                            (x + 8, 336), self.fuente, color_estado)
+            elif jugador_local and jugador_local.get("inmune"):
+                pygame.draw.rect(superficie, (45, 70, 55), (x, 330, self.ANCHO_PANEL - 28, 48), border_radius=6)
+                self.texto(superficie,
+                           f"INMUNE · {jugador_local.get('segundos_inmunidad', 0):.1f} s",
+                           (x + 8, 336), self.fuente, (140, 235, 160))
             self.texto(superficie, "G: guardián", (x, 398),
                        self.fuente_chica, (255, 150, 150))
             self.texto(superficie, "Trampas y puertas", (x, 418),

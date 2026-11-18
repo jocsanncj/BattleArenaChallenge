@@ -110,6 +110,9 @@ class GestorObstaculos:
 
     def activar_trampa(self, jugador_id, x, y, ahora=None, ubicaciones_ocupadas=()):
         ahora = self.reloj() if ahora is None else ahora
+        # Resuelve primero expiraciones pendientes (p. ej. una inmunidad que aún
+        # no se había materializado) para no perderlas al reemplazar el estado.
+        self.actualizar(ahora)
         for trampa in self.trampas:
             if trampa.activa and (trampa.x, trampa.y) == (x, y):
                 anterior = self.estados_jugadores.get(str(jugador_id), {})
@@ -124,6 +127,9 @@ class GestorObstaculos:
                     "estado": "inmovilizado", "hasta": hasta,
                     "efecto": trampa.tipo,
                     "mensaje": f"Has caído en {nombres[trampa.tipo]}",
+                    # La inmunidad frente a guardianes no se pierde al pisar una trampa.
+                    "inmunidad_hasta": anterior.get("inmunidad_hasta", 0.0),
+                    "duracion_inmunidad": anterior.get("duracion_inmunidad", 3.0),
                 }
                 # La trampa reaparece en otra casilla al activarse; el servidor
                 # publica la nueva posición en la siguiente actualización de estado.
@@ -139,6 +145,9 @@ class GestorObstaculos:
         self.actualizar(ahora)
         clave = str(jugador_id)
         anterior = self.estados_jugadores.get(clave, {})
+        # Invulnerabilidad: un jugador inmune o ya congelado no puede ser congelado.
+        if self.esta_inmune(clave, ahora) or anterior.get("estado") == "congelado":
+            return self.estado_jugador(clave, ahora)
         restante = max(0.0, anterior.get("hasta", 0.0) - ahora)
         self.estados_jugadores[clave] = {
             "estado": "congelado", "hasta": ahora + restante + max(1.0, float(duracion)),
@@ -147,6 +156,13 @@ class GestorObstaculos:
             "inmunidad_hasta": anterior.get("inmunidad_hasta", 0.0),
         }
         return self.estado_jugador(clave, ahora)
+
+    def esta_inmune(self, jugador_id, ahora=None):
+        """True mientras dure la inmunidad posterior a un congelamiento."""
+        instante = self.reloj() if ahora is None else ahora
+        self.actualizar(instante)
+        estado = self.estados_jugadores.get(str(jugador_id), {})
+        return estado.get("inmunidad_hasta", 0.0) > instante
 
     def estado_publico(self, ahora=None):
         self.actualizar(ahora)
@@ -171,3 +187,39 @@ class GestorObstaculos:
         return {**estado,
                 "segundos_restantes": max(0.0, estado["hasta"] - instante),
                 "segundos_inmunidad": max(0.0, estado.get("inmunidad_hasta", 0.0) - instante)}
+
+    def duplicar_trampas(self, posiciones_ocupadas=()):
+        """Crea una copia temporal de cada trampa activa en una casilla libre."""
+        nuevas = []
+        ocupadas = set(posiciones_ocupadas)
+        ocupadas.update((t.x, t.y) for t in self.trampas)
+        ocupadas.update((p["x"], p["y"]) for p in self.puertas)
+        ocupadas.update(self.mapa.puntos_inicio())
+        ocupadas.update((x, y) for y in range(self.mapa.filas)
+                        for x in range(self.mapa.columnas)
+                        if self.mapa.casilla_en(x, y).value == "R")
+        originales = [t for t in self.trampas if t.activa]
+        candidatas = [(x, y) for y in range(1, self.mapa.filas - 1)
+                      for x in range(1, self.mapa.columnas - 1)
+                      if self.mapa.es_transitable(x, y) and (x, y) not in ocupadas]
+        self.aleatorio.shuffle(candidatas)
+        for indice, trampa in enumerate(originales):
+            if not candidatas:
+                break
+            x, y = candidatas.pop()
+            copia = Trampa(
+                f"trampa_evento_{int(time.monotonic() * 1000)}_{indice}",
+                trampa.tipo, x, y, trampa.duracion, True,
+            )
+            self.trampas.append(copia)
+            nuevas.append(copia.identificador)
+        return nuevas
+
+    def quitar_trampas_evento(self, identificadores):
+        """Elimina las trampas adicionales de un evento sin alterar las originales."""
+        conjunto = set(identificadores)
+        self.trampas = [
+            t for t in self.trampas
+            if t.identificador not in conjunto
+        ]
+

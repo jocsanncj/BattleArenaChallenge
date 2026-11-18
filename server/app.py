@@ -16,6 +16,7 @@ from shared.game.arena import MultiplayerArena
 from shared.game.rules import GameRules
 from shared.game.obstacles import GestorObstaculos
 from shared.game.guardians import GestorGuardianes
+from shared.game.events import GestorEventosPartida
 
 app = Flask(__name__)
 
@@ -125,6 +126,7 @@ _GAME_LOCK = threading.RLock()
 _GAME_ARENA = None
 _GAME_OBSTACULOS = None
 _GAME_GUARDIANES = None
+_GAME_EVENTOS = None
 _GAME_USERS = {}
 _GAME_PLAYER_IDS = {}
 _MOVE_TIMES = {}
@@ -194,7 +196,8 @@ def _actualizar_reactor(estado, ahora):
         if _GAME_OBSTACULOS is not None else {"estado": "normal"}
     )
     if (
-        estado.get("status") not in {"running", "overtime"}
+        (_GAME_EVENTOS is not None and _GAME_EVENTOS.sobrecarga_activa(ahora))
+        or estado.get("status") not in {"running", "overtime"}
         or not estado.get("active")
         or jugador is None
         or not jugador.get("connected")
@@ -212,6 +215,8 @@ def _actualizar_reactor(estado, ahora):
     _REACTOR["available_at"] = ahora + 4.0
 
 def _estado_reactor(ahora):
+    if _GAME_EVENTOS is not None and _GAME_EVENTOS.sobrecarga_activa(ahora):
+        return {"status": "sobrecargado", "remaining_seconds": 0.0}
     interaccion = _REACTOR["active"]
     if interaccion is not None:
         restante = max(0.0, 1.5 - (ahora - interaccion["started_at"]))
@@ -230,6 +235,8 @@ def _estado_reactor(ahora):
 def _persistir_resultado_partida(estado):
     if estado.get("status") != "finished":
         return
+    if _GAME_EVENTOS is not None:
+        _GAME_EVENTOS.finalizar()
     participantes = []
     for jugador in estado.get("players", []):
         player_id = jugador["player_id"]
@@ -261,20 +268,42 @@ def _estado_arena():
     ahora = time.monotonic()
     estado = _GAME_ARENA.tick(ahora)
     if estado.get("status") != "finished":
+        if _GAME_EVENTOS is not None:
+            if estado.get("paused"):
+                _GAME_EVENTOS.pausar(ahora)
+            else:
+                _GAME_EVENTOS.reanudar(ahora)
+                _GAME_EVENTOS.actualizar(
+                    estado.get("players", []), ahora,
+                    prorroga=estado.get("status") == "overtime",
+                )
         if _GAME_OBSTACULOS is not None:
-            # US-21: primero se resuelven los alcances de guardianes; así un
-            # jugador congelado en este ciclo no puede completar una extracción.
-            # La IA no avanza por consultas HTTP si la partida está pausada.
             if (
                 _GAME_GUARDIANES is not None
                 and estado.get("status") in {"running", "overtime"}
                 and estado.get("active")
                 and not estado.get("paused")
             ):
+                estados_anteriores = {
+                    j["player_id"]: _GAME_OBSTACULOS.estado_jugador(j["player_id"], ahora)
+                    for j in estado.get("players", [])
+                }
                 _GAME_GUARDIANES.actualizar(estado.get("players", []), ahora)
+                if _GAME_EVENTOS is not None:
+                    for jugador in estado.get("players", []):
+                        anterior = estados_anteriores.get(jugador["player_id"], {})
+                        actual = _GAME_OBSTACULOS.estado_jugador(
+                            jugador["player_id"], ahora
+                        )
+                        _GAME_EVENTOS.penalizar_por_guardian(
+                            jugador["player_id"], anterior, actual,
+                            _GAME_ARENA.scoreboard, ahora,
+                        )
                 estado = _GAME_ARENA.snapshot()
         _actualizar_reactor(estado, ahora)
         estado = _GAME_ARENA.tick(ahora)
+    elif _GAME_EVENTOS is not None:
+        _GAME_EVENTOS.finalizar()
     if _GAME_OBSTACULOS is not None:
         estado["obstaculos"] = _GAME_OBSTACULOS.estado_publico(ahora)
         estado["guardianes"] = (
@@ -286,7 +315,11 @@ def _estado_arena():
             jugador["estado_temporal"] = estado_jugador["estado"]
             jugador["efecto_trampa"] = estado_jugador["efecto"]
             jugador["segundos_inmovilizado"] = estado_jugador["segundos_restantes"]
+            jugador["segundos_inmunidad"] = estado_jugador["segundos_inmunidad"]
+            jugador["inmune"] = estado_jugador["segundos_inmunidad"] > 0
             jugador["mensaje_obstaculo"] = estado_jugador["mensaje"]
+    if _GAME_EVENTOS is not None:
+        estado.update(_GAME_EVENTOS.estado_publico(ahora))
     estado["reactor"] = _estado_reactor(ahora)
     _persistir_resultado_partida(estado)
     jugadores = []
@@ -299,7 +332,7 @@ def _estado_arena():
     return estado
 
 def _iniciar_arena(partida):
-    global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_GUARDIANES, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
+    global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_GUARDIANES, _GAME_EVENTOS, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
     jugadores = partida.get("jugadores", [])
     if not 2 <= len(jugadores) <= 3:
         raise ValueError("La partida requiere dos o tres jugadores.")
@@ -322,6 +355,9 @@ def _iniciar_arena(partida):
         ARENA_PREDETERMINADA, _GAME_OBSTACULOS,
         segundos_congelacion=configuracion.get("segundos_congelacion", 3),
     )
+    _GAME_EVENTOS = GestorEventosPartida(
+        ARENA_PREDETERMINADA, _GAME_OBSTACULOS, _GAME_GUARDIANES
+    )
     _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
     posiciones = ARENA_PREDETERMINADA.puntos_inicio()[:3]
     estado = _leer_estado_juego()
@@ -338,6 +374,10 @@ def _iniciar_arena(partida):
         arena.join_player(player_id, player_id, jugador["nombre_usuario"], avatar_id, x, y)
     arena.begin_match()
     _GAME_ARENA = arena
+    _GAME_EVENTOS.iniciar(
+        time.monotonic(), reglas.duration_seconds,
+        modo="puntos" if modo == "puntos" else "tiempo",
+    )
 
 @app.post("/api/game/reactor")
 @requiere_sesion
@@ -368,6 +408,8 @@ def interactuar_con_reactor(claims):
             return {"ok": True, "state": estado}
         if estado is None or estado.get("status") not in {"running", "overtime"}:
             raise ValueError("La partida no está activa.")
+        if _GAME_EVENTOS is not None and _GAME_EVENTOS.sobrecarga_activa():
+            raise ValueError("El reactor está desactivado por una sobrecarga.")
         jugador = next((p for p in estado.get("players", [])if p["player_id"] == player_id and p.get("connected")),None,)
         if jugador is None:
             raise PermissionError("No perteneces a esta partida.")
@@ -474,6 +516,8 @@ def unirse_partida_juego(claims):
                 )
                 if _GAME_ARENA.has_two_players() and _GAME_ARENA.rules.paused:
                     _GAME_ARENA.begin_match()
+                    if _GAME_EVENTOS is not None:
+                        _GAME_EVENTOS.reanudar()
                 return {"ok": True}
             raise ValueError("La partida ya comenzó y no admite nuevos jugadores.")
         existente = next((j for j in partida["jugadores"] if j["id_usuario"] == user_id), None)
@@ -505,6 +549,8 @@ def salir_partida_juego(claims):
         partida = estado["partida"]
         if _GAME_ARENA is not None:
             _GAME_ARENA.disconnect_player(player_id)
+            if _GAME_EVENTOS is not None:
+                _GAME_EVENTOS.pausar()
             snapshot = _GAME_ARENA.snapshot()
             _persistir_resultado_partida(snapshot)
             jugadores = snapshot["players"]
@@ -619,6 +665,8 @@ def mover_jugador_juego(claims):
         if any(p["player_id"] != player_id and p["x"] == x and p["y"] == y
                for p in estado["players"]):
             return {"ok": False, "error": "Otro jugador ocupa esa casilla.", "state": _estado_arena()}
+        if _GAME_GUARDIANES is not None and (x, y) in _GAME_GUARDIANES.posiciones():
+            return {"ok": False, "error": "Un guardián ocupa esa casilla.", "state": _estado_arena()}
         _GAME_ARENA.confirm_movement(player_id, x, y)
         if _GAME_OBSTACULOS is not None:
             ubicaciones_ocupadas = {
@@ -630,6 +678,15 @@ def mover_jugador_juego(claims):
             _GAME_OBSTACULOS.activar_trampa(
                 player_id, x, y, ahora, ubicaciones_ocupadas
             )
+        if _GAME_EVENTOS is not None:
+            jugador_actual = next(
+                (p for p in _GAME_ARENA.snapshot()["players"]
+                 if p["player_id"] == player_id), None
+            )
+            if jugador_actual is not None:
+                puntos_extra = _GAME_EVENTOS.recoger_energia(jugador_actual, ahora)
+                if puntos_extra:
+                    _GAME_ARENA.scoreboard.add_points(player_id, puntos_extra)
         _MOVE_TIMES[player_id] = ahora
         return {"ok": True, "state": _estado_arena()}
 
