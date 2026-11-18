@@ -15,7 +15,7 @@ class GestorGuardianes:
     a una esquina para evitar que permanezca junto a él.
     """
 
-    INTERVALO_MOVIMIENTO = 1.2
+    INTERVALO_MOVIMIENTO = 0.8
     RADIO_VIGILANCIA = 4
 
     def __init__(self, mapa, obstaculos, segundos_congelacion=3,
@@ -104,13 +104,24 @@ class GestorGuardianes:
     def _jugador_disponible(self, jugador, ahora):
         """Solo considera jugadores libres y cuya inmunidad ya terminó."""
         estado = self.obstaculos.estado_jugador(str(jugador["player_id"]), ahora)
+        # Se excluyen congelados e inmunes. Un jugador inmovilizado por una
+        # trampa sí puede seguir siendo objetivo: el tiempo del guardián se
+        # acumula sobre el tiempo restante de la trampa.
         return (
-            estado.get("estado", "normal") == "normal"
+            estado.get("estado", "normal") != "congelado"
             and estado.get("segundos_inmunidad", 0.0) <= 0.0
         )
 
-    def _mover_perseguidor(self, guardian, jugadores, ahora):
+    def _mover_perseguidor(self, guardian, jugadores, ahora, objetivos_asignados=None):
         disponibles = [j for j in jugadores if self._jugador_disponible(j, ahora)]
+        # Evita que ambos perseguidores elijan al mismo jugador cuando hay
+        # al menos dos objetivos disponibles. Si solo queda uno, ambos pueden
+        # perseguirlo.
+        if objetivos_asignados:
+            sin_asignar = [j for j in disponibles
+                           if str(j["player_id"]) not in objetivos_asignados]
+            if sin_asignar:
+                disponibles = sin_asignar
         if not disponibles:
             # No se queda esperando junto a un jugador congelado.
             guardian["objetivo"] = None
@@ -119,6 +130,8 @@ class GestorGuardianes:
 
         objetivo = self.aleatorio.choice(disponibles)
         guardian["objetivo"] = str(objetivo["player_id"])
+        if objetivos_asignados is not None:
+            objetivos_asignados.add(str(objetivo["player_id"]))
         destino_jugador = (int(objetivo["x"]), int(objetivo["y"]))
         vecinos = self._casillas_vecinas(guardian["x"], guardian["y"])
         if not vecinos:
@@ -203,6 +216,7 @@ class GestorGuardianes:
             (int(j["x"]), int(j["y"])) for j in conectados
         }
 
+        objetivos_asignados = set()
         for guardian in self.guardianes:
             # Si por un estado previo quedó encima de un jugador, se retira
             # inmediatamente. Nunca se queda ocupando esa casilla.
@@ -219,7 +233,7 @@ class GestorGuardianes:
                 continue
 
             if guardian["tipo"] == "perseguidor":
-                self._mover_perseguidor(guardian, conectados, ahora)
+                self._mover_perseguidor(guardian, conectados, ahora, objetivos_asignados)
             else:
                 self._mover_vigilante(guardian)
 
