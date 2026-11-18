@@ -8,7 +8,7 @@ from frontend import actions
 from shared.domain import Casilla, ErrorApp
 from shared.game.arena import draw_players
 from shared.game.scores import draw_scores
-from .base import (ACENTO, COLOR_CUADRICULA, COLOR_LIMITE, COLOR_MURO, COLOR_OBSTACULO, COLOR_PISO, COLOR_REACTOR, COLORES_INICIO, ERROR, FONDO, PANEL, Boton, Contexto, Pantalla, describir_configuracion, reproducir_musica)
+from .base import (ACENTO, COLOR_CUADRICULA, COLOR_LIMITE, COLOR_MURO, COLOR_OBSTACULO, COLOR_PISO, COLOR_REACTOR, COLORES_INICIO, ERROR, FONDO, PANEL, Boton, Contexto, Pantalla, reproducir_musica)
 
 class PantallaArena(Pantalla):
     """
@@ -21,7 +21,7 @@ class PantallaArena(Pantalla):
     Atributos:
         TAM_CASILLA (int): lado en píxeles de cada casilla (32).
         ANCHO_PANEL (int): ancho en píxeles del panel lateral (250).
-        INTERVALO_MS (int): cada cuántos ms se vuelve a leer la partida (500).
+        INTERVALO_MS (int): cada cuántos ms se vuelve a leer la partida (300).
         tecla_escape (str): 'volver'; ESC sale de la arena.
         mapa (MapaArena): escenario que se dibuja.
         fuente_grande (pygame.font.Font): fuente de tamaño 48 para el temporizador.
@@ -29,7 +29,7 @@ class PantallaArena(Pantalla):
         _partida (Partida) y _ultimo (int): última partida leída y momento de la lectura.
         _musica (Optional[pygame.mixer.Sound]): música en reproducción, o None.
     """
-    TAM_CASILLA, ANCHO_PANEL, INTERVALO_MS = 32, 250, 500
+    TAM_CASILLA, ANCHO_PANEL, INTERVALO_MS = 32, 250, 300
     tecla_escape = "volver"
     def __init__(self, ctx: Contexto):
         """
@@ -138,7 +138,7 @@ class PantallaArena(Pantalla):
     def actualizar(self) -> Optional[str]:
         """
         Descripción:
-            Cada 500 ms vuelve a leer la partida desde el repositorio para reflejar cambios
+            Cada 300 ms vuelve a leer la partida desde el servidor para reflejar cambios
             (por ejemplo, jugadores que entran o salen). Nunca cierra la pantalla por sí sola.
         Entradas:
             Ninguna.
@@ -218,13 +218,21 @@ class PantallaArena(Pantalla):
                 marcas_trampas.get(trampa["tipo"], "!"), True, (255, 255, 255))
             superficie.blit(marca, marca.get_rect(center=centro_trampa))
 
-        # US-21: los guardianes se dibujan con una apariencia propia, distinta de avatares y trampas.
+        # US-21: guardianes con silueta propia, ojos y dirección hacia su objetivo.
+        # La posición procede siempre del servidor; no se simula persecución en el cliente.
         for guardian in juego.get("guardianes", []):
-            centro_guardian = (guardian["x"] * T + T // 2, guardian["y"] * T + T // 2)
-            pygame.draw.circle(superficie, (235, 65, 75), centro_guardian, T // 2 - 2)
-            pygame.draw.circle(superficie, (255, 225, 225), centro_guardian, T // 2 - 2, 2)
-            marca_guardian = pygame.font.Font(None, 22).render("G", True, (255, 255, 255))
-            superficie.blit(marca_guardian, marca_guardian.get_rect(center=centro_guardian))
+            gx, gy = int(guardian["x"]), int(guardian["y"])
+            centro_guardian = (gx * T + T // 2, gy * T + T // 2)
+            cuerpo = pygame.Rect(gx * T + 5, gy * T + 4, T - 10, T - 8)
+            pygame.draw.rect(superficie, (165, 35, 55), cuerpo, border_radius=7)
+            pygame.draw.rect(superficie, (255, 145, 150), cuerpo, 2, border_radius=7)
+            pygame.draw.circle(superficie, (255, 245, 225), (centro_guardian[0] - 5, centro_guardian[1] - 2), 3)
+            pygame.draw.circle(superficie, (255, 245, 225), (centro_guardian[0] + 5, centro_guardian[1] - 2), 3)
+            pygame.draw.circle(superficie, (35, 25, 35), (centro_guardian[0] - 5, centro_guardian[1] - 2), 1)
+            pygame.draw.circle(superficie, (35, 25, 35), (centro_guardian[0] + 5, centro_guardian[1] - 2), 1)
+            pygame.draw.line(superficie, (255, 210, 210),
+                             (centro_guardian[0] - 5, centro_guardian[1] + 6),
+                             (centro_guardian[0] + 5, centro_guardian[1] + 6), 2)
 
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
@@ -261,7 +269,8 @@ class PantallaArena(Pantalla):
         if juego:
             if cfg.modo_fin == "tiempo":
                 segundos = juego.get("remaining_seconds")
-                etiqueta = "Tiempo restante"
+                etiqueta = ("Prórroga · tiempo restante" if juego.get("status") == "overtime"
+                            else "Tiempo restante")
             else:
                 segundos = juego.get("elapsed_seconds", 0)
                 etiqueta = "Tiempo transcurrido"
@@ -338,56 +347,62 @@ class PantallaArena(Pantalla):
         self.insignia.dibujar(superficie, (x, 12))
         mensaje_estado = (juego.get("message", "Partida en curso.") if juego else
                         "Partida en curso" if p.estado == "jugando" else "Esperando")
+        if juego and juego.get("status") == "overtime":
+            mensaje_estado = "EMPATE · PRÓRROGA DE 2 MINUTOS"
         self.texto(superficie, mensaje_estado, (x, 74))
         etiqueta, valor = self._temporizador()
         self.texto(superficie, etiqueta, (x, 104))
         self.texto(superficie, valor, (x, 124), self.fuente_grande)
-        for i, linea in enumerate(describir_configuracion(p.configuracion)):
-            self.texto(superficie, linea, (x, 184 + i * 22))
-        self.texto(superficie, "Jugadores", (x, 244), self.fuente)
+        self.texto(superficie, "MARCADOR", (x, 184), self.fuente)
         if juego:
-            for i, jugador in enumerate(juego.get("players", [])):
+            jugadores = juego.get("players", [])
+            for i, jugador in enumerate(jugadores):
                 user_id = jugador["user_id"]
-                superficie.blit(self.ctx.avatares.obtener_superficie(user_id, 28), (x, 274 + i * 44))
-            draw_scores(superficie, juego, position=(x + 36, 281))
-            jugador_local = next((j for j in juego.get("players", [])
-                                  if j.get("user_id") == self.ctx.id_usuario), None)
+                superficie.blit(
+                    self.ctx.avatares.obtener_superficie(user_id, 26),
+                    (x, 220 + i * 48),
+                )
+            draw_scores(superficie, juego, position=(x + 36, 226))
+            jugador_local = next(
+                (j for j in jugadores if j.get("user_id") == self.ctx.id_usuario),
+                None,
+            )
             if jugador_local and jugador_local.get("estado_temporal") in {"inmovilizado", "congelado"}:
                 restante = jugador_local.get("segundos_inmovilizado", 0)
-                estado_texto = "CONGELADO" if jugador_local.get("estado_temporal") == "congelado" else "INMOVILIZADO"
-                self.texto(superficie, f"{estado_texto}: {restante:.1f} s",
-                           (x, 370), self.fuente, (120, 205, 255) if estado_texto == "CONGELADO" else (255, 130, 90))
-                self.texto(superficie, jugador_local.get("mensaje_obstaculo", "Efecto temporal"),
-                           (x, 392), self.fuente_chica, (190, 220, 255))
-            self.texto(superficie, "Guardianes: G (rojo)", (x, 456),
+                estado_texto = (
+                    "CONGELADO" if jugador_local.get("estado_temporal") == "congelado"
+                    else "INMOVILIZADO"
+                )
+                color_estado = (
+                    (120, 205, 255) if estado_texto == "CONGELADO"
+                    else (255, 160, 100)
+                )
+                pygame.draw.rect(superficie, (45, 55, 75), (x, 330, self.ANCHO_PANEL - 28, 48), border_radius=6)
+                self.texto(superficie, f"{estado_texto} · {restante:.1f} s",
+                           (x + 8, 336), self.fuente, color_estado)
+            self.texto(superficie, "G: guardián", (x, 398),
                        self.fuente_chica, (255, 150, 150))
-            self.texto(superficie, "Puerta: verde abierta / roja cerrada", (x, 420),
-                       self.fuente_chica, (190, 205, 220))
-            self.texto(superficie, "Trampas: J jaula / A arenas / E electricidad", (x, 438),
+            self.texto(superficie, "Trampas y puertas", (x, 418),
                        self.fuente_chica, (190, 205, 220))
             if juego.get("status") == "finished":
                 self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
             else:
-                indicacion = ("Gamepad: stick / cruceta" if
-                            self.control_entrada.modo == actions.MODO_GAMEPAD else
-                            "WASD / flechas: mover")
-                self.texto(superficie, indicacion, (x, superficie.get_height() - 44))
+                indicacion = (
+                    "Gamepad: stick / cruceta" if self.control_entrada.modo == actions.MODO_GAMEPAD
+                    else "WASD / flechas: mover"
+                )
                 accion_indicacion = (
-                    "Botón A: extraer energía"
-                    if self.control_entrada.modo == actions.MODO_GAMEPAD
+                    "Botón A: extraer" if self.control_entrada.modo == actions.MODO_GAMEPAD
                     else "E: extraer energía"
                 )
-                self.texto(
-                    superficie,
-                    accion_indicacion,
-                    (x, superficie.get_height() - 64),
-                )
+                self.texto(superficie, indicacion, (x, superficie.get_height() - 64))
+                self.texto(superficie, accion_indicacion, (x, superficie.get_height() - 44))
                 self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         else:
             for i, j in enumerate(p.jugadores):
-                superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, 28), (x, 274 + i * 34))
+                superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, 28), (x, 220 + i * 36))
                 self.texto(superficie, j.nombre_usuario + (" (tú)" if j.id_usuario == self.ctx.id_usuario else ""),
-                           (x + 36, 281 + i * 34))
+                           (x + 36, 227 + i * 36))
             self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         if self.mensaje:
             mensaje = self.mensaje

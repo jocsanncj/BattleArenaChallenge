@@ -189,11 +189,16 @@ def _actualizar_reactor(estado, ahora):
         ),
         None,
     )
+    estado_temporal = (
+        _GAME_OBSTACULOS.estado_jugador(interaccion["player_id"], ahora)
+        if _GAME_OBSTACULOS is not None else {"estado": "normal"}
+    )
     if (
         estado.get("status") not in {"running", "overtime"}
         or not estado.get("active")
         or jugador is None
         or not jugador.get("connected")
+        or estado_temporal.get("estado") in {"congelado", "inmovilizado"}
         or not ARENA_PREDETERMINADA.junto_al_reactor(
             int(jugador["x"]), int(jugador["y"])
         )
@@ -256,13 +261,21 @@ def _estado_arena():
     ahora = time.monotonic()
     estado = _GAME_ARENA.tick(ahora)
     if estado.get("status") != "finished":
+        if _GAME_OBSTACULOS is not None:
+            # US-21: primero se resuelven los alcances de guardianes; así un
+            # jugador congelado en este ciclo no puede completar una extracción.
+            # La IA no avanza por consultas HTTP si la partida está pausada.
+            if (
+                _GAME_GUARDIANES is not None
+                and estado.get("status") in {"running", "overtime"}
+                and estado.get("active")
+                and not estado.get("paused")
+            ):
+                _GAME_GUARDIANES.actualizar(estado.get("players", []), ahora)
+                estado = _GAME_ARENA.snapshot()
         _actualizar_reactor(estado, ahora)
         estado = _GAME_ARENA.tick(ahora)
     if _GAME_OBSTACULOS is not None:
-        # US-21: el servidor mueve los guardianes y decide los congelamientos.
-        if _GAME_GUARDIANES is not None and estado.get("status") != "finished":
-            _GAME_GUARDIANES.actualizar(estado.get("players", []), ahora)
-            estado = _GAME_ARENA.snapshot()
         estado["obstaculos"] = _GAME_OBSTACULOS.estado_publico(ahora)
         estado["guardianes"] = (
             _GAME_GUARDIANES.estado_publico(estado.get("players", []), ahora)
@@ -358,6 +371,13 @@ def interactuar_con_reactor(claims):
         jugador = next((p for p in estado.get("players", [])if p["player_id"] == player_id and p.get("connected")),None,)
         if jugador is None:
             raise PermissionError("No perteneces a esta partida.")
+        if accion == "start" and _GAME_OBSTACULOS is not None:
+            estado_temporal = _GAME_OBSTACULOS.estado_jugador(player_id, time.monotonic())
+            if estado_temporal.get("estado") in {"congelado", "inmovilizado"}:
+                raise ValueError(
+                    "No puedes extraer energía mientras estás "
+                    + ("congelado." if estado_temporal["estado"] == "congelado" else "inmovilizado.")
+                )
         clave_evento = (player_id, event_id)
         if clave_evento in _REACTOR["events"]:
             return {"ok": True, "duplicate": True, "state": estado}

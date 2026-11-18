@@ -59,8 +59,12 @@ class GestorObstaculos:
                 puerta["abierta"] = not puerta["abierta"]
                 puerta["cambia_en"] = ahora + self.DURACION_PUERTA
         for estado in self.estados_jugadores.values():
-            if estado["hasta"] <= ahora:
-                estado.update(estado="normal", hasta=0.0, efecto=None, mensaje="")
+            if estado["hasta"] <= ahora and estado.get("estado") in {"congelado", "inmovilizado"}:
+                # La inmunidad comienza justo al terminar el congelamiento del guardián.
+                inmunidad = (estado["hasta"] + estado.get("duracion_inmunidad", 3.0)
+                             if estado.get("efecto") == "guardian" else estado.get("inmunidad_hasta", 0.0))
+                estado.update(estado="normal", hasta=0.0, efecto=None, mensaje="",
+                              inmunidad_hasta=inmunidad)
 
     def puerta_en(self, x, y):
         return next((puerta for puerta in self.puertas
@@ -128,8 +132,9 @@ class GestorObstaculos:
         return None
 
 
-    def aplicar_congelamiento(self, jugador_id, duracion, ahora=None, mensaje="Un guardián te ha alcanzado"):
-        """Aplica congelamiento autoritativo y acumula cualquier inmovilización vigente."""
+    def aplicar_congelamiento(self, jugador_id, duracion, ahora=None, mensaje="Un guardián te ha alcanzado",
+                              segundos_inmunidad=3.0):
+        """Aplica congelamiento y configura la inmunidad que inicia al descongelarse."""
         ahora = self.reloj() if ahora is None else ahora
         self.actualizar(ahora)
         clave = str(jugador_id)
@@ -138,6 +143,8 @@ class GestorObstaculos:
         self.estados_jugadores[clave] = {
             "estado": "congelado", "hasta": ahora + restante + max(1.0, float(duracion)),
             "efecto": "guardian", "mensaje": mensaje,
+            "duracion_inmunidad": max(1.0, float(segundos_inmunidad)),
+            "inmunidad_hasta": anterior.get("inmunidad_hasta", 0.0),
         }
         return self.estado_jugador(clave, ahora)
 
@@ -157,6 +164,10 @@ class GestorObstaculos:
 
     def estado_jugador(self, jugador_id, ahora=None):
         self.actualizar(ahora)
+        instante = self.reloj() if ahora is None else ahora
         estado = self.estados_jugadores.get(str(jugador_id),
-                  {"estado": "normal", "hasta": 0.0, "efecto": None, "mensaje": ""})
-        return {**estado, "segundos_restantes": max(0.0, estado["hasta"] - (self.reloj() if ahora is None else ahora))}
+                  {"estado": "normal", "hasta": 0.0, "efecto": None, "mensaje": "",
+                   "inmunidad_hasta": 0.0})
+        return {**estado,
+                "segundos_restantes": max(0.0, estado["hasta"] - instante),
+                "segundos_inmunidad": max(0.0, estado.get("inmunidad_hasta", 0.0) - instante)}
