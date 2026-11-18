@@ -51,7 +51,6 @@ class GestorObstaculos:
                                seleccionadas[i + 1][1], duracion)
                         for i, (tipo, duracion) in enumerate(tipos)]
         self.estados_jugadores: dict[str, dict] = {}
-        self._trampas_activadas: set[tuple[str, str]] = set()
 
     def actualizar(self, ahora=None):
         ahora = self.reloj() if ahora is None else ahora
@@ -70,7 +69,7 @@ class GestorObstaculos:
     def jugador_inmovil(self, jugador_id, ahora=None):
         self.actualizar(ahora)
         estado = self.estados_jugadores.get(str(jugador_id), {})
-        return estado.get("estado") == "inmovilizado"
+        return estado.get("estado") in {"inmovilizado", "congelado"}
 
     def validar_movimiento(self, jugador_id, x, y, ahora=None):
         """Valida límites, barreras, puertas y estado temporal del jugador."""
@@ -85,12 +84,30 @@ class GestorObstaculos:
             return False, "La puerta está cerrada. Espera a que se abra."
         return True, ""
 
-    def activar_trampa(self, jugador_id, x, y, ahora=None):
+    def _nueva_ubicacion_trampa(self, trampa, ubicaciones_ocupadas=()):
+        """Busca una casilla aleatoria y segura para volver a colocar una trampa."""
+        ocupadas = set(ubicaciones_ocupadas or ())
+        ocupadas.update((puerta["x"], puerta["y"]) for puerta in self.puertas)
+        ocupadas.update((otra.x, otra.y) for otra in self.trampas if otra is not trampa)
+        # No se reutiliza la casilla que acaba de activar el jugador.
+        ocupadas.add((trampa.x, trampa.y))
+        ocupadas.update(self.mapa.puntos_inicio())
+        ocupadas.update((x, y) for y in range(self.mapa.filas)
+                        for x in range(self.mapa.columnas)
+                        if self.mapa.casilla_en(x, y).value == "R")
+        candidatas = [(x, y) for y in range(1, self.mapa.filas - 1)
+                      for x in range(1, self.mapa.columnas - 1)
+                      if self.mapa.es_transitable(x, y) and (x, y) not in ocupadas]
+        if not candidatas:
+            # Si el mapa está temporalmente lleno, la trampa permanece en su lugar.
+            return False
+        trampa.x, trampa.y = self.aleatorio.choice(candidatas)
+        return True
+
+    def activar_trampa(self, jugador_id, x, y, ahora=None, ubicaciones_ocupadas=()):
         ahora = self.reloj() if ahora is None else ahora
         for trampa in self.trampas:
-            clave = (str(jugador_id), trampa.identificador)
-            if trampa.activa and (trampa.x, trampa.y) == (x, y) and clave not in self._trampas_activadas:
-                self._trampas_activadas.add(clave)
+            if trampa.activa and (trampa.x, trampa.y) == (x, y):
                 anterior = self.estados_jugadores.get(str(jugador_id), {})
                 restante = max(0.0, anterior.get("hasta", 0.0) - ahora)
                 hasta = ahora + restante + trampa.duracion
@@ -104,8 +121,25 @@ class GestorObstaculos:
                     "efecto": trampa.tipo,
                     "mensaje": f"Has caído en {nombres[trampa.tipo]}",
                 }
+                # La trampa reaparece en otra casilla al activarse; el servidor
+                # publica la nueva posición en la siguiente actualización de estado.
+                self._nueva_ubicacion_trampa(trampa, ubicaciones_ocupadas)
                 return self.estados_jugadores[str(jugador_id)].copy()
         return None
+
+
+    def aplicar_congelamiento(self, jugador_id, duracion, ahora=None, mensaje="Un guardián te ha alcanzado"):
+        """Aplica congelamiento autoritativo y acumula cualquier inmovilización vigente."""
+        ahora = self.reloj() if ahora is None else ahora
+        self.actualizar(ahora)
+        clave = str(jugador_id)
+        anterior = self.estados_jugadores.get(clave, {})
+        restante = max(0.0, anterior.get("hasta", 0.0) - ahora)
+        self.estados_jugadores[clave] = {
+            "estado": "congelado", "hasta": ahora + restante + max(1.0, float(duracion)),
+            "efecto": "guardian", "mensaje": mensaje,
+        }
+        return self.estado_jugador(clave, ahora)
 
     def estado_publico(self, ahora=None):
         self.actualizar(ahora)

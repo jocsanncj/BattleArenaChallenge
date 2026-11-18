@@ -218,6 +218,14 @@ class PantallaArena(Pantalla):
                 marcas_trampas.get(trampa["tipo"], "!"), True, (255, 255, 255))
             superficie.blit(marca, marca.get_rect(center=centro_trampa))
 
+        # US-21: los guardianes se dibujan con una apariencia propia, distinta de avatares y trampas.
+        for guardian in juego.get("guardianes", []):
+            centro_guardian = (guardian["x"] * T + T // 2, guardian["y"] * T + T // 2)
+            pygame.draw.circle(superficie, (235, 65, 75), centro_guardian, T // 2 - 2)
+            pygame.draw.circle(superficie, (255, 225, 225), centro_guardian, T // 2 - 2, 2)
+            marca_guardian = pygame.font.Font(None, 22).render("G", True, (255, 255, 255))
+            superficie.blit(marca_guardian, marca_guardian.get_rect(center=centro_guardian))
+
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
         pygame.draw.circle(superficie, color_reactor, centro, int(T * 1.4))
@@ -287,6 +295,7 @@ class PantallaArena(Pantalla):
         if juego:
             jugadores_dibujo = []
             imagenes_avatar = {}
+            posiciones_estados = []
             posicion_local = None
             for jugador in juego.get("players", []):
                 user_id = jugador["user_id"]
@@ -297,6 +306,12 @@ class PantallaArena(Pantalla):
                     y=f * T + T // 2,
                 ))
                 imagenes_avatar[jugador["avatar_id"]] = self.ctx.avatares.obtener_superficie(user_id, T - 6)
+                if jugador.get("estado_temporal") in {"congelado", "inmovilizado"}:
+                    posiciones_estados.append((
+                        (c * T + T // 2, f * T + T // 2),
+                        (90, 190, 255) if jugador["estado_temporal"] == "congelado"
+                        else (255, 145, 75),
+                    ))
                 if user_id == self.ctx.id_usuario:
                     posicion_local = (c * T + T // 2, f * T + T // 2)
             draw_players(
@@ -305,6 +320,8 @@ class PantallaArena(Pantalla):
                 imagenes_avatar,
                 size=T - 6,
             )
+            for centro_estado, color_estado in posiciones_estados:
+                pygame.draw.circle(superficie, color_estado, centro_estado, T // 2 - 1, 3)
             if posicion_local:
                 pygame.draw.circle(superficie, ACENTO, posicion_local, T // 2, 2)
         else:
@@ -335,12 +352,15 @@ class PantallaArena(Pantalla):
             draw_scores(superficie, juego, position=(x + 36, 281))
             jugador_local = next((j for j in juego.get("players", [])
                                   if j.get("user_id") == self.ctx.id_usuario), None)
-            if jugador_local and jugador_local.get("estado_temporal") == "inmovilizado":
+            if jugador_local and jugador_local.get("estado_temporal") in {"inmovilizado", "congelado"}:
                 restante = jugador_local.get("segundos_inmovilizado", 0)
-                self.texto(superficie, f"INMOVILIZADO: {restante:.1f} s",
-                           (x, 370), self.fuente, (255, 130, 90))
-                self.texto(superficie, jugador_local.get("mensaje_obstaculo", "Trampa activada"),
-                           (x, 392), self.fuente_chica, (255, 190, 130))
+                estado_texto = "CONGELADO" if jugador_local.get("estado_temporal") == "congelado" else "INMOVILIZADO"
+                self.texto(superficie, f"{estado_texto}: {restante:.1f} s",
+                           (x, 370), self.fuente, (120, 205, 255) if estado_texto == "CONGELADO" else (255, 130, 90))
+                self.texto(superficie, jugador_local.get("mensaje_obstaculo", "Efecto temporal"),
+                           (x, 392), self.fuente_chica, (190, 220, 255))
+            self.texto(superficie, "Guardianes: G (rojo)", (x, 456),
+                       self.fuente_chica, (255, 150, 150))
             self.texto(superficie, "Puerta: verde abierta / roja cerrada", (x, 420),
                        self.fuente_chica, (190, 205, 220))
             self.texto(superficie, "Trampas: J jaula / A arenas / E electricidad", (x, 438),

@@ -15,6 +15,7 @@ from shared.domain import ARENA_PREDETERMINADA
 from shared.game.arena import MultiplayerArena
 from shared.game.rules import GameRules
 from shared.game.obstacles import GestorObstaculos
+from shared.game.guardians import GestorGuardianes
 
 app = Flask(__name__)
 
@@ -123,6 +124,7 @@ _GAME_FILE = datos / "partida_online.json"
 _GAME_LOCK = threading.RLock()
 _GAME_ARENA = None
 _GAME_OBSTACULOS = None
+_GAME_GUARDIANES = None
 _GAME_USERS = {}
 _GAME_PLAYER_IDS = {}
 _MOVE_TIMES = {}
@@ -256,15 +258,23 @@ def _estado_arena():
     if estado.get("status") != "finished":
         _actualizar_reactor(estado, ahora)
         estado = _GAME_ARENA.tick(ahora)
-    estado["reactor"] = _estado_reactor(ahora)
     if _GAME_OBSTACULOS is not None:
+        # US-21: el servidor mueve los guardianes y decide los congelamientos.
+        if _GAME_GUARDIANES is not None and estado.get("status") != "finished":
+            _GAME_GUARDIANES.actualizar(estado.get("players", []), ahora)
+            estado = _GAME_ARENA.snapshot()
         estado["obstaculos"] = _GAME_OBSTACULOS.estado_publico(ahora)
+        estado["guardianes"] = (
+            _GAME_GUARDIANES.estado_publico(estado.get("players", []), ahora)
+            if _GAME_GUARDIANES is not None else []
+        )
         for jugador in estado.get("players", []):
             estado_jugador = _GAME_OBSTACULOS.estado_jugador(jugador["player_id"], ahora)
             jugador["estado_temporal"] = estado_jugador["estado"]
             jugador["efecto_trampa"] = estado_jugador["efecto"]
             jugador["segundos_inmovilizado"] = estado_jugador["segundos_restantes"]
             jugador["mensaje_obstaculo"] = estado_jugador["mensaje"]
+    estado["reactor"] = _estado_reactor(ahora)
     _persistir_resultado_partida(estado)
     jugadores = []
     for jugador in estado.get("players", []):
@@ -276,7 +286,7 @@ def _estado_arena():
     return estado
 
 def _iniciar_arena(partida):
-    global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
+    global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_GUARDIANES, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
     jugadores = partida.get("jugadores", [])
     if not 2 <= len(jugadores) <= 3:
         raise ValueError("La partida requiere dos o tres jugadores.")
@@ -294,6 +304,10 @@ def _iniciar_arena(partida):
     _GAME_OBSTACULOS = GestorObstaculos(
         ARENA_PREDETERMINADA, ARENA_PREDETERMINADA.puntos_inicio()[:len(jugadores)],
         segundos_inmovilizacion=configuracion.get("segundos_congelacion", 3),
+    )
+    _GAME_GUARDIANES = GestorGuardianes(
+        ARENA_PREDETERMINADA, _GAME_OBSTACULOS,
+        segundos_congelacion=configuracion.get("segundos_congelacion", 3),
     )
     _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
     posiciones = ARENA_PREDETERMINADA.puntos_inicio()[:3]
@@ -587,7 +601,15 @@ def mover_jugador_juego(claims):
             return {"ok": False, "error": "Otro jugador ocupa esa casilla.", "state": _estado_arena()}
         _GAME_ARENA.confirm_movement(player_id, x, y)
         if _GAME_OBSTACULOS is not None:
-            _GAME_OBSTACULOS.activar_trampa(player_id, x, y, ahora)
+            ubicaciones_ocupadas = {
+                (int(jugador_actual["x"]), int(jugador_actual["y"]))
+                for jugador_actual in estado["players"]
+                if jugador_actual["player_id"] != player_id
+            }
+            ubicaciones_ocupadas.add((x, y))
+            _GAME_OBSTACULOS.activar_trampa(
+                player_id, x, y, ahora, ubicaciones_ocupadas
+            )
         _MOVE_TIMES[player_id] = ahora
         return {"ok": True, "state": _estado_arena()}
 
