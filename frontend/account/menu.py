@@ -1,4 +1,6 @@
 """Navegación de bienvenida, autenticación, verificación y perfil."""
+from frontend import visual as v
+from frontend.audio import musica
 
 import pygame
 from frontend.auth.google_web import abrir_login_google, descartar_login_google
@@ -30,6 +32,7 @@ class MainMenuScene(BaseScene):
         self.small_font = pygame.font.SysFont("Segoe UI", 17)
         self.detail_font = pygame.font.SysFont("Segoe UI", 15)
         # Comienza mostrando la pantalla de bienvenida.
+        musica.iniciar()
         self.page = "welcome"
         # Inicializa colecciones de controles que cambian según la página.
         self.fields = []
@@ -78,8 +81,8 @@ class MainMenuScene(BaseScene):
         self.buttons = []
         # Cada rama construye la navegación y formulario de una pantalla.
         if self.page == "welcome":
-            self._button(250, 260, 190, "Iniciar sesión", lambda: self._set_page("login"))
-            self._button(460, 260, 190, "Crear cuenta", lambda: self._set_page("register"))
+            self._button(64, 361, 180, "Iniciar sesión", lambda: self._set_page("login"))
+            self._button(256, 361, 180, "Crear cuenta", lambda: self._set_page("register"))
         elif self.page == "register":
             self.fields = [
                 CampoTexto("Nombre de usuario", 145, max_length=40),
@@ -116,15 +119,23 @@ class MainMenuScene(BaseScene):
         elif self.page == "recovery_sent":
             self._button(355, 390, 190, "Volver al inicio", lambda: self._set_page("login"))
         elif self.page == "menu":
-            self._button(250, 320, 400, "Jugar online", self._abrir_juego)  # CAMBIO ONLINE: entrada a escenas del juego
-            self._button(250, 375, 400, "Ver perfil", self._abrir_perfil)
-            self._button(250,430,400, "Ver ranking", self._abrir_ranking)
-            self._button(355, 485, 190, "Cerrar sesión", self._cerrar_sesion)
+            self._button(64, 289, 360, "Jugar online", self._abrir_juego)  # CAMBIO ONLINE: entrada a escenas del juego
+            self._button(64, 347, 360, "Ver perfil", self._abrir_perfil)
+            self._button(64, 405, 360, "Ver ranking", self._abrir_ranking)
+            self._button(64, 463, 360, "Cerrar sesión", self._cerrar_sesion)
         elif self.page == "profile":
             self._button(355, 535, 190, "Volver al menú", lambda: self._set_page("menu"))
         elif self.page == "ranking":
             self._button(250, 535, 190, "Actualizar", self._abrir_ranking)
             self._button(460, 535, 190, "Volver", lambda: self._set_page("menu"))
+
+        if self.page in {"welcome", "menu"}:
+            self._button(798, 22, 174, "Música · " + ("activa" if musica.activa else "apagada"), self._musica)
+
+    def _musica(self):
+        musica.alternar()
+        self.status = musica.aviso
+        self._configure_page()
 
     ## @brief Guarda el nombre y navega al menú luego de autenticar.
     ## @param nombre Nombre de la cuenta que inició sesión.
@@ -494,15 +505,14 @@ class MainMenuScene(BaseScene):
     ## @return None.
     def draw(self, surface):
         # Limpia el contenido anterior para empezar un nuevo fotograma.
-        surface.fill(FONDO)
-        # Dibuja el contenido principal según la página activa.
+        surface.blit(v.fondo(surface.get_size(), self.page in {"welcome", "menu"}), (0, 0))
         if self.page == "welcome":
-            self._draw_centered(surface, "Battle Arena Challenge", 165)
-            self._draw_centered(
-                surface, "Inicia sesión o crea una cuenta.", 215,
-                self.font, TEXTO_SECUNDARIO
-            )
-        elif self.page == "register":
+            v.rotulo(surface, "BATTLE", (58, 120), 76, v.TEXT, True)
+            v.rotulo(surface, "ARENA", (58, 198), 76, v.MINT, True)
+            v.rotulo(surface, "C H A L L E N G E", (66, 300), 19, v.MUTED, True)
+        elif self.page != "menu":
+            pygame.draw.rect(surface, v.PANEL, (52, 50, 896, 535), border_radius=18)
+        if self.page == "register":
             self._draw_centered(surface, "Crear cuenta", 85)
         elif self.page == "verify_pending":
             self._draw_centered(surface, "Verifica tu correo", 210)
@@ -536,12 +546,9 @@ class MainMenuScene(BaseScene):
                 surface, self.status, 295, self.small_font, TEXTO_SECUNDARIO
             )
         elif self.page == "menu":
-            self._draw_centered(surface, f"Hola, {self.user_name}", 190)
-            self._draw_avatar_placeholder(surface, self.user_name, 242)
-            self._draw_centered(
-                surface, "Tu sesión está activa.", 285,
-                self.font, TEXTO_SECUNDARIO
-            )
+            v.rotulo(surface, "BATTLE ARENA", (64, 125), 17, v.MINT, True)
+            v.rotulo(surface, "Hola, " + self.user_name, (60, 166), 42, v.TEXT, True, 480)
+            v.rotulo(surface, "Tu sesión está activa.", (64, 236), 17, v.MUTED)
         elif self.page == "profile":
             self._draw_profile(surface)
         elif self.page == "ranking":
@@ -551,7 +558,7 @@ class MainMenuScene(BaseScene):
         for field in self.fields:
             field.draw(surface, self.font, self.small_font)
         for button in self.buttons:
-            button.draw(surface, pygame.mouse.get_pos())
+            v.boton(surface, button.rect, button.text, button.font, button is self.buttons[0])
         # Muestra mensajes breves abajo, evitando duplicar pantallas de estado.
         if self.status and self.page not in (
             "verify_pending", "email_error", "email_pending",

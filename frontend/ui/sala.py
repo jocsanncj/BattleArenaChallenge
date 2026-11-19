@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 import pygame
+from frontend import personajes
 
 from shared.domain import ServicioPartida
 from .base import (ACENTO, ERROR, EXITO, GRIS, Boton, Contexto, Pantalla, describir_configuracion)
@@ -109,7 +110,7 @@ class PantallaSala(Pantalla):
         self.texto(superficie, msg, (60, 90), self.fuente, color)
         self.texto(superficie, f"Jugadores ({len(p.jugadores)}/{total})", (60, 130), self.fuente)
         for i, j in enumerate(p.jugadores):
-            superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, 32), (60, 165 + i * 40))
+            superficie.blit(personajes.de_usuario(self.ctx.avatares, j.id_usuario, 32), (60, 165 + i * 40))
             self.texto(superficie, j.nombre_usuario + (" (tú)" if j.id_usuario == self.ctx.id_usuario else ""),
                        (104, 174 + i * 40))
         self.texto(superficie, "Configuración actual", (430, 130), self.fuente)

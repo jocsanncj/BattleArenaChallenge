@@ -11,21 +11,6 @@ Las reglas de juego pertenecen a shared/domain/ y los modelos a shared/data.py.
 
 # Librerías estándar de Python (vienen incluidas, no hay que instalarlas)
 
-# io: BytesIO es un archivo en memoria donde se guarda la melodía generada, sin crear
-# archivos en el disco.
-import io
-
-# math: seno (math.sin) y pi para calcular las ondas de sonido de la melodía.
-import math
-
-# struct: empaqueta los números de las muestras de audio en bytes de 16 bits.
-import struct
-
-# wave: escribe los bytes de audio con el formato de archivo WAV, que pygame sabe reproducir.
-import wave
-
-# dataclasses (dataclass, replace): dataclass crea Contexto y Boton sin código repetitivo;
-# replace hace una copia de la configuración para editarla sin alterar la guardada.
 from dataclasses import dataclass, replace
 
 # typing (Callable, List, Optional): anotaciones de tipo que documentan qué recibe y
@@ -36,7 +21,10 @@ from typing import Callable, List, Optional
 
 # pygame: es la base de toda la interfaz: ventana, dibujo, fuentes, eventos de ratón y
 # teclado, reloj de cuadros por segundo y el mezclador de audio de la música.
+from frontend import visual as v
+from frontend.escenarios import MAPAS, indice_mapa
 import pygame
+from frontend import personajes
 
 # Módulos propios del proyecto
 
@@ -129,7 +117,7 @@ class InsigniaAvatar:
             Ninguna. Efecto: avatar y nombre dibujados.
         """
         x, y = esquina
-        superficie.blit(self._ctx.avatares.obtener_superficie(self._ctx.id_usuario, tam), (x, y))
+        superficie.blit(personajes.de_usuario(self._ctx.avatares, self._ctx.id_usuario, tam), (x, y))
         superficie.blit(self._fuente.render(self._ctx.nombre_usuario, True, TEXTO), (x + tam + 8, y + tam // 2 - 8))
 
 
@@ -145,81 +133,10 @@ def describir_configuracion(cfg: ConfiguracionPartida) -> List[str]:
         List[str]: dos líneas, por ejemplo ['Fin de partida: 5 minutos', 'Congelación: 3 s'].
     """
     fin = f"{cfg.minutos_fin} minutos" if cfg.modo_fin == "tiempo" else f"{cfg.puntos_fin} puntos"
-    return [f"Fin de partida: {fin}", f"Congelación: {cfg.segundos_congelacion} s"]
+    return [f"Fin de partida: {fin}", f"Congelación: {cfg.segundos_congelacion} s", f"Mapa: {MAPAS[indice_mapa(cfg)].nombre}"]
 
 
 # 4. AUDIO Y EXPLORADOR DE ARCHIVO
-
-def _construir_melodia() -> io.BytesIO:
-    """
-    Descripción:
-        Genera la música del juego por código, sin archivos de audio. Crea una melodía
-        suave de 16 notas (un arpegio) calculando las ondas de sonido a mano.
-
-        Pasos:
-        1. Para cada nota genera 0.4 segundos de audio a 22050 muestras por segundo.
-        2. Cada muestra es una onda seno de la frecuencia de la nota más una segunda onda
-           de menor volumen al doble de frecuencia, que le da un timbre más agradable.
-        3. Aplica una envolvente: el volumen sube rápido al comenzar la nota y baja
-           suavemente hasta el final, para evitar chasquidos entre notas.
-        4. Empaqueta todas las muestras como números de 16 bits y las escribe en un
-           archivo WAV (mono) dentro de memoria.
-        5. Rebobina el buffer para que pueda leerse desde el inicio.
-    Entradas:
-        Ninguna.
-    Salidas:
-        io.BytesIO: archivo WAV en memoria, listo para que pygame lo reproduzca.
-    """
-    frecuencia_muestreo, duracion = 22050, 0.4
-    notas = [523.25, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33, 659.25,
-             523.25, 659.25, 783.99, 1046.5, 880.0, 783.99, 659.25, 587.33]
-    muestras = []
-    for nota in notas:
-        n = int(frecuencia_muestreo * duracion)
-        for i in range(n):
-            envolvente = min(1.0, i / 200) * (1 - i / n)
-            onda = math.sin(2 * math.pi * nota * i / frecuencia_muestreo) \
-                + 0.3 * math.sin(4 * math.pi * nota * i / frecuencia_muestreo)
-            muestras.append(int(9000 * envolvente * onda))
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(frecuencia_muestreo)
-        w.writeframes(struct.pack(f"<{len(muestras)}h", *muestras))
-    buffer.seek(0)
-    return buffer
-
-
-def reproducir_musica() -> Optional[pygame.mixer.Sound]:
-    """
-    Descripción:
-        Inicia la música de fondo en bucle infinito.
-
-        Pasos:
-        1. Inicia el mezclador de audio de pygame si todavía no está iniciado.
-        2. Crea un sonido a partir de la melodía generada, con volumen 0.4.
-        3. Lo reproduce repitiéndose sin fin (loops=-1).
-
-        Si el computador no tiene dispositivo de audio no detiene el juego: avisa por
-        consola y devuelve None.
-    Entradas:
-        Ninguna.
-    Salidas:
-        Optional[pygame.mixer.Sound]: el sonido en reproducción (para poder detenerlo
-            después con stop()), o None si no hay audio disponible.
-    """
-    try:
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        sonido = pygame.mixer.Sound(file=_construir_melodia())
-        sonido.set_volume(0.4)
-        sonido.play(loops=-1)
-        return sonido
-    except pygame.error:
-        print("Sin dispositivo de audio: la música no se reproducirá.")
-        return None
-
 
 def elegir_archivo_imagen() -> Optional[str]:
     """
@@ -450,10 +367,7 @@ class Pantalla:
         """
         for b in self.botones():
             if b.etiqueta:
-                pygame.draw.rect(superficie, b.color, b.rectangulo, border_radius=8)
-                t = self.fuente.render(b.etiqueta, True, (10, 10, 20))
-                superficie.blit(t, (b.rectangulo.centerx - t.get_width() // 2,
-                                    b.rectangulo.centery - t.get_height() // 2))
+                v.boton(superficie, b.rectangulo, b.etiqueta, self.fuente_chica, b.color == EXITO)
 
     def dibujar_encabezado(self, superficie, titulo: str) -> None:
         """
@@ -467,7 +381,8 @@ class Pantalla:
         Salidas:
             Ninguna.
         """
-        superficie.fill(FONDO)
+        superficie.blit(v.fondo(superficie.get_size()), (0, 0))
+        pygame.draw.rect(superficie, v.PANEL, (40, 78, superficie.get_width()-80, 378), border_radius=14)
         self.texto(superficie, titulo, (60, 40), self.fuente)
         self.insignia.dibujar(superficie, (superficie.get_width() - 220, 15))
         self.texto(superficie, self.mensaje, (60, 470), color=self.color_mensaje)

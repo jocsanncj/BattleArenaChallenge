@@ -93,7 +93,8 @@ def draw_avatar(surface, avatar_id: str, center: tuple, size: int = 18,
         None,
     )
     if avatar is not None:
-        image = ServicioAvatar.dibujar_predeterminado(avatar, radius * 2)
+        from frontend.personajes import imagen
+        image = imagen(avatar.id, radius * 2)
         surface.blit(image, image.get_rect(center=(x, y)))
         return
     color = ORANGE if avatar_id == "orbit" else TEAL
@@ -165,7 +166,8 @@ class _CelebrationMusic:
     def __init__(self):
         self.sound = None
         self.channel = None
-        self.muted = False
+        from frontend.audio import preferencia
+        self.muted = not preferencia()
 
     def start(self) -> str:
         try:
@@ -175,7 +177,7 @@ class _CelebrationMusic:
             if sample_format != -16:
                 return "Audio no disponible: salida PCM incompatible."
             self.sound = pygame.mixer.Sound(buffer=make_celebration_pcm(sample_rate, channels))
-            self.sound.set_volume(0.40)
+            self.sound.set_volume(0 if self.muted else 0.40)
             self.channel = self.sound.play(loops=-1)
             if self.channel is None:
                 return "Audio no disponible: no hay canales libres."

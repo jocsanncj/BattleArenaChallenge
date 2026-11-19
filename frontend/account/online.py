@@ -111,6 +111,8 @@ class JuegoOnlineScene(BaseScene):
                             if eleccion.tipo == "personalizado":
                                 participante["avatar_png"] = eleccion.valor
                             resultado["players"].append(participante)
+                        from frontend.audio import musica
+                        musica.detener()
                         launch_victory_window(resultado)
                         self._victory_match_id = match_id
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:

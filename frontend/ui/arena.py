@@ -4,11 +4,13 @@ from typing import List, Optional
 
 import pygame
 
-from frontend import actions
-from shared.domain import Casilla, ErrorApp
+from frontend import actions, visual as v
+from frontend.audio import musica, sonido_extraccion
+from frontend import personajes
+from frontend.escenarios import MAPAS, indice_mapa
+from shared.domain import ErrorApp
 from shared.game.arena import draw_players
-from shared.game.scores import draw_scores
-from .base import (ACENTO, COLOR_CUADRICULA, COLOR_LIMITE, COLOR_MURO, COLOR_OBSTACULO, COLOR_PISO, COLOR_REACTOR, COLORES_INICIO, ERROR, FONDO, PANEL, Boton, Contexto, Pantalla, reproducir_musica)
+from .base import ACENTO, COLOR_LIMITE, ERROR, FONDO, Boton, Contexto, Pantalla
 
 class PantallaArena(Pantalla):
     """
@@ -29,7 +31,7 @@ class PantallaArena(Pantalla):
         _partida (Partida) y _ultimo (int): última partida leída y momento de la lectura.
         _musica (Optional[pygame.mixer.Sound]): música en reproducción, o None.
     """
-    TAM_CASILLA, ANCHO_PANEL, INTERVALO_MS = 32, 250, 300
+    TAM_CASILLA, ANCHO_PANEL, INTERVALO_MS = 36, 244, 300
     tecla_escape = "volver"
     def __init__(self, ctx: Contexto):
         """
@@ -45,7 +47,12 @@ class PantallaArena(Pantalla):
         self.mapa = ctx.partida.arena
         self.fuente_grande = pygame.font.SysFont(None, 48)
         self._partida, self._ultimo = ctx.partida.obtener_partida(), pygame.time.get_ticks()
-        self._musica: Optional[pygame.mixer.Sound] = None
+        self.mapa = MAPAS[indice_mapa(self._partida.configuracion)]
+        self._ultima_extraccion = ((self._partida.estado_juego or {}).get("reactor") or {}).get("ultima_extraccion")
+        self._recargando = (self._partida.estado_juego or {}).get("reactor", {}).get("status") == "recargando"
+        self._aviso_hasta = 0
+        self._imagenes = {}
+
         actions.iniciar()
         self.control_entrada = actions.ControlEntrada()
         self._ultimo_movimiento = -self.INTERVALO_MOVIMIENTO_MS
@@ -65,7 +72,7 @@ class PantallaArena(Pantalla):
         etiqueta = ("Usar teclado" if self.control_entrada.modo == actions.MODO_GAMEPAD
                     else "Usar gamepad")
         x = self.mapa.columnas * self.TAM_CASILLA + 14
-        y = self.mapa.filas * self.TAM_CASILLA - 102
+        y = self.mapa.filas * self.TAM_CASILLA - 80
         return [
             Boton(
                 pygame.Rect(x, y, self.ANCHO_PANEL - 28, 34),
@@ -127,14 +134,13 @@ class PantallaArena(Pantalla):
         pygame.display.quit()
         pygame.display.init()
         ventana = pygame.display.set_mode((self.mapa.columnas * self.TAM_CASILLA + self.ANCHO_PANEL,
-                                           self.mapa.filas * self.TAM_CASILLA))
+                                           self.mapa.filas * self.TAM_CASILLA + 60))
         pygame.display.set_caption("Battle Arena - Sala de juego")
-        self._musica = reproducir_musica()
+        musica.iniciar()
         try:
             return super().ejecutar(ventana)
         finally:
-            if self._musica:
-                self._musica.stop()
+            musica.detener()
     def actualizar(self) -> Optional[str]:
         """
         Descripción:
@@ -150,7 +156,29 @@ class PantallaArena(Pantalla):
         self._procesar_interaccion()
         if ahora - self._ultimo >= self.INTERVALO_MS:
             self._ultimo, self._partida = ahora, self.ctx.partida.obtener_partida()
+            self._escuchar_extraccion(self._partida.estado_juego or {})
         return None
+    def _escuchar_extraccion(self, juego):
+        reactor = juego.get("reactor") or {}
+        marca = reactor.get("ultima_extraccion")
+        recargando = reactor.get("status") == "recargando"
+        if "ultima_extraccion" in reactor:
+            confirmada = marca is not None and marca != self._ultima_extraccion
+        else:
+            # Develop entra en recarga únicamente después de otorgar una extracción.
+            confirmada = recargando and not self._recargando
+        self._ultima_extraccion = marca
+        self._recargando = recargando
+        if confirmada:
+            self._aviso_hasta = pygame.time.get_ticks() + 1800
+            sonido_extraccion()
+
+    def _avatar(self, user_id, tam, tipo="retratos"):
+        clave = (user_id, tam, tipo)
+        if clave not in self._imagenes:
+            self._imagenes[clave] = personajes.de_usuario(self.ctx.avatares, user_id, tam, tipo)
+        return self._imagenes[clave]
+
     def _dibujar_mapa(self, superficie: pygame.Surface) -> None:
         """
         Descripción:
@@ -177,24 +205,10 @@ class PantallaArena(Pantalla):
             "recargando": (120, 130, 150),
             "sobrecargado": (230, 65, 65),
         }.get(estado_reactor, (60, 220, 230))
-        for f in range(m.filas):
-            for c in range(m.columnas):
-                casilla, rect = m.casilla_en(c, f), pygame.Rect(c * T, f * T, T, T)
-                if casilla is Casilla.MURO:
-                    pygame.draw.rect(superficie, COLOR_MURO, rect)
-                elif casilla is Casilla.OBSTACULO:
-                    pygame.draw.rect(superficie, COLOR_OBSTACULO, rect)
-                    pygame.draw.line(superficie, (70, 50, 40), rect.topleft, rect.bottomright, 3)
-                    pygame.draw.line(superficie, (70, 50, 40), rect.topright, rect.bottomleft, 3)
-                elif casilla is Casilla.REACTOR:
-                    pygame.draw.rect(superficie, COLOR_REACTOR, rect)
-                else:
-                    pygame.draw.rect(superficie, COLOR_PISO, rect)
-                    pygame.draw.rect(superficie, COLOR_CUADRICULA, rect, 1)
-        for i, (c, f) in enumerate(m.puntos_inicio()):
-            pygame.draw.circle(superficie, COLORES_INICIO[i % 4], (c * T + T // 2, f * T + T // 2), T // 2 - 2, 2)
+        segundos = juego.get("elapsed_seconds", 0)
+        tema = v.fase(indice_mapa(self._partida.configuracion), segundos)
+        superficie.blit(v.tablero(m, tema, T), (0, 0))
 
-        # Los obstáculos dinámicos proceden exclusivamente del estado enviado por el servidor.
         obstaculos = juego.get("obstaculos", {})
         for puerta in obstaculos.get("puertas", []):
             rect = pygame.Rect(puerta["x"] * T + 3, puerta["y"] * T + 3, T - 6, T - 6)
@@ -257,8 +271,8 @@ class PantallaArena(Pantalla):
 
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
-        pygame.draw.circle(superficie, color_reactor, centro, int(T * 1.4))
-        pygame.draw.circle(superficie, (230, 255, 255), centro, int(T * 0.6))
+        v.reactor(superficie, m, tema, T, segundos)
+        pygame.draw.circle(superficie, color_reactor, centro, int(T * 1.4), 3)
         etiquetas_reactor = {
             "disponible": "REACTOR DISPONIBLE",
             "ocupado": "REACTOR OCUPADO",
@@ -327,48 +341,17 @@ class PantallaArena(Pantalla):
             "sobrecarga": "SOBRECARGA DEL REACTOR",
         }
         ancho_mapa = self.mapa.columnas * self.TAM_CASILLA
-        x, y = 8, 8
-        ancho = min(340, ancho_mapa - 16)
-        alto_fila = 27
-        filas = len(eventos) if eventos else 1
-        alto = 27 + filas * alto_fila
-        panel = pygame.Surface((ancho, alto), pygame.SRCALPHA)
-        pygame.draw.rect(panel, (18, 25, 39, 225), panel.get_rect(), border_radius=7)
-        pygame.draw.rect(panel, (255, 190, 70, 255), panel.get_rect(), 2, border_radius=7)
-        encabezado = self.fuente_chica.render(
-            "ESTÁS BAJO LOS EFECTOS DE:", True, (255, 210, 105)
-        )
-        panel.blit(encabezado, (8, 5))
-
+        y = self.mapa.filas*self.TAM_CASILLA+5
         if eventos:
-            for indice, evento in enumerate(eventos):
-                identificador = evento.get("id", evento.get("nombre", ""))
-                nombre = nombres.get(evento.get("tipo")) or nombres.get(
-                    identificador, evento.get("mensaje", "EVENTO ACTIVO"))
-                restante = max(0.0, float(evento.get("segundos_restantes", 0)))
-                linea = f"• {nombre}  ({restante:.1f} s)"
-                texto = self.fuente_chica.render(linea, True, (245, 245, 245))
-                panel.blit(texto, (8, 27 + indice * alto_fila))
+            ancho = ancho_mapa // len(eventos)
+            for i, evento in enumerate(eventos):
+                tipo = evento.get("tipo")
+                titulo = nombres.get(tipo, nombres.get(evento.get("id"), evento.get("mensaje","Evento activo")))
+                segundos = max(0, evento.get("segundos_restantes", 0))
+                v.lineas(superficie, f"{titulo} · {segundos:.0f} s", pygame.Rect(i*ancho+8,y,ancho-16,52), (251,208,129))
         else:
-            restante = max(0.0, float(proximo_evento.get("segundos_restantes", 0)))
-            linea = f"PRÓXIMO EVENTO EN {restante:.1f} s"
-            texto = self.fuente_chica.render(linea, True, (245, 245, 245))
-            panel.blit(texto, (8, 27))
-
-        superficie.blit(panel, (x, y))
-
-        # CA-22.5: al iniciar un evento se anuncia su efecto con un aviso grande.
-        recientes = [e for e in eventos
-                     if float(e.get("segundos_transcurridos", 99)) < 4.0 and e.get("mensaje")]
-        if recientes:
-            evento = max(recientes, key=lambda e: -float(e.get("segundos_transcurridos", 0)))
-            texto = self.fuente.render(evento["mensaje"], True, (255, 235, 150))
-            ancho_aviso = min(ancho_mapa - 16, texto.get_width() + 28)
-            aviso = pygame.Surface((ancho_aviso, texto.get_height() + 18), pygame.SRCALPHA)
-            pygame.draw.rect(aviso, (20, 20, 35, 235), aviso.get_rect(), border_radius=8)
-            pygame.draw.rect(aviso, (255, 190, 70, 255), aviso.get_rect(), 2, border_radius=8)
-            aviso.blit(texto, ((ancho_aviso - texto.get_width()) // 2, 9))
-            superficie.blit(aviso, ((ancho_mapa - ancho_aviso) // 2, y + alto + 8))
+            v.rotulo(superficie, f"Próximo evento en {proximo_evento['segundos_restantes']:.0f} s",
+                     (14, y+10), 15, v.MUTED)
 
     def dibujar(self, superficie) -> None:
         """
@@ -403,7 +386,7 @@ class PantallaArena(Pantalla):
                     x=c * T + T // 2,
                     y=f * T + T // 2,
                 ))
-                imagenes_avatar[jugador["avatar_id"]] = self.ctx.avatares.obtener_superficie(user_id, T - 6)
+                imagenes_avatar[jugador["avatar_id"]] = self._avatar(user_id, T - 2, "personajes")
                 if jugador.get("estado_temporal") in {"congelado", "inmovilizado"}:
                     posiciones_estados.append((
                         (c * T + T // 2, f * T + T // 2),
@@ -416,7 +399,7 @@ class PantallaArena(Pantalla):
                 superficie,
                 dict(juego, players=jugadores_dibujo),
                 imagenes_avatar,
-                size=T - 6,
+                size=T - 2,
             )
             for centro_estado, color_estado in posiciones_estados:
                 pygame.draw.circle(superficie, color_estado, centro_estado, T // 2 - 1, 3)
@@ -425,35 +408,43 @@ class PantallaArena(Pantalla):
         else:
             for j in p.jugadores:
                 c, f = m.puntos_inicio()[j.indice_inicio]
-                superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, T - 6),
-                                (c * T + 3, f * T + 3))
+                superficie.blit(self._avatar(j.id_usuario, T - 2, "personajes"),
+                                (c * T + 1, f * T + 1))
                 if j.id_usuario == self.ctx.id_usuario:
                     pygame.draw.circle(superficie, ACENTO,
                                        (c * T + T // 2, f * T + T // 2), T // 2, 2)
         if juego:
             self._dibujar_indicadores_eventos(superficie, juego)
         x0 = m.columnas * T
-        pygame.draw.rect(superficie, PANEL, (x0, 0, self.ANCHO_PANEL, superficie.get_height()))
+        pygame.draw.rect(superficie, v.PANEL, (x0, 0, self.ANCHO_PANEL, superficie.get_height()))
         x = x0 + 14
-        self.insignia.dibujar(superficie, (x, 12))
-        mensaje_estado = (juego.get("message", "Partida en curso.") if juego else
-                        "Partida en curso" if p.estado == "jugando" else "Esperando")
-        if juego and juego.get("status") == "overtime":
-            mensaje_estado = "EMPATE · PRÓRROGA DE 2 MINUTOS"
-        self.texto(superficie, mensaje_estado, (x, 74))
+        tema = v.fase(indice_mapa(p.configuracion), (juego or {}).get("elapsed_seconds", 0))
+        luz = v.PALETAS[tema][-1]
+        local = next((j for j in (juego or {}).get("players", [])
+                      if j["user_id"] == self.ctx.id_usuario), {})
+        superficie.blit(self._avatar(self.ctx.id_usuario, 66), (x, 10))
+        v.rotulo(superficie, "TU JUGADOR", (x+75, 14), 11, luz, True)
+        v.rotulo(superficie, self.ctx.nombre_usuario, (x+75, 30), 16, v.TEXT, True, 137)
+        energia = local.get("energia_extraida")
+        dato = f"Energía extraída: {energia}" if energia is not None else f"Puntos: {local.get('score', 0)}"
+        v.rotulo(superficie, dato, (x+75, 54), 13, v.TEXT, ancho=140)
+        v.rotulo(superficie, v.NOMBRES[tema], (x, 80), 16, luz, True)
         etiqueta, valor = self._temporizador()
-        self.texto(superficie, etiqueta, (x, 104))
-        self.texto(superficie, valor, (x, 124), self.fuente_grande)
-        self.texto(superficie, "MARCADOR", (x, 184), self.fuente)
+        v.rotulo(superficie, etiqueta, (x, 105), 13, v.MUTED)
+        v.rotulo(superficie, valor, (x, 122), 27, v.TEXT, True)
+        aviso = "Energía extraída" if pygame.time.get_ticks() < self._aviso_hasta else (juego or {}).get("message", "Esperando")
+        v.lineas(superficie, aviso, pygame.Rect(x,158,self.ANCHO_PANEL-28,39), luz)
+        v.rotulo(superficie, "MARCADOR", (x, 198), 12, v.MUTED, True)
         if juego:
             jugadores = juego.get("players", [])
             for i, jugador in enumerate(jugadores):
-                user_id = jugador["user_id"]
-                superficie.blit(
-                    self.ctx.avatares.obtener_superficie(user_id, 26),
-                    (x, 220 + i * 48),
-                )
-            draw_scores(superficie, juego, position=(x + 36, 226))
+                y = 221 + i*34
+                local = jugador["user_id"] == self.ctx.id_usuario
+                superficie.blit(self._avatar(jugador["user_id"], 26), (x, y))
+                v.rotulo(superficie, jugador["username"], (x+34, y+3), 14,
+                         luz if local else v.TEXT, local, self.ANCHO_PANEL-106)
+                puntos = v.fuente(17, True).render(str(jugador["score"]), True, v.TEXT)
+                superficie.blit(puntos, puntos.get_rect(topright=(x0+self.ANCHO_PANEL-14,y)))
             jugador_local = next(
                 (j for j in jugadores if j.get("user_id") == self.ctx.id_usuario),
                 None,
@@ -476,10 +467,6 @@ class PantallaArena(Pantalla):
                 self.texto(superficie,
                            f"INMUNE · {jugador_local.get('segundos_inmunidad', 0):.1f} s",
                            (x + 8, 336), self.fuente, (140, 235, 160))
-            self.texto(superficie, "G: guardián", (x, 398),
-                       self.fuente_chica, (255, 150, 150))
-            self.texto(superficie, "Trampas y puertas", (x, 418),
-                       self.fuente_chica, (190, 205, 220))
             if juego.get("status") == "finished":
                 self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
             else:
@@ -488,7 +475,7 @@ class PantallaArena(Pantalla):
                     else "WASD / flechas: mover"
                 )
                 accion_indicacion = (
-                    "Botón A: extraer" if self.control_entrada.modo == actions.MODO_GAMEPAD
+                    "Botón 0 (X / A): extraer" if self.control_entrada.modo == actions.MODO_GAMEPAD
                     else "E: extraer energía"
                 )
                 self.texto(superficie, indicacion, (x, superficie.get_height() - 64))
@@ -496,14 +483,10 @@ class PantallaArena(Pantalla):
                 self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         else:
             for i, j in enumerate(p.jugadores):
-                superficie.blit(self.ctx.avatares.obtener_superficie(j.id_usuario, 28), (x, 220 + i * 36))
+                superficie.blit(self._avatar(j.id_usuario, 28), (x, 220 + i * 36))
                 self.texto(superficie, j.nombre_usuario + (" (tú)" if j.id_usuario == self.ctx.id_usuario else ""),
                            (x + 36, 227 + i * 36))
             self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         if self.mensaje:
-            mensaje = self.mensaje
-            while self.fuente_chica.size(mensaje)[0] > self.ANCHO_PANEL - 28:
-                mensaje = mensaje[:-4] + "..."
-            self.texto(superficie, mensaje, (x, superficie.get_height() - 130),
-                    self.fuente_chica, self.color_mensaje)
+            v.lineas(superficie, self.mensaje, pygame.Rect(x, 385, self.ANCHO_PANEL-28, 64), self.color_mensaje)
         self.dibujar_botones(superficie)

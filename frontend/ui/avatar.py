@@ -3,6 +3,7 @@
 from typing import List
 
 import pygame
+from frontend import personajes
 
 from .base import (ACENTO, ERROR, EXITO, PANEL, Boton, Contexto, Pantalla, elegir_archivo_imagen)
 
@@ -72,7 +73,7 @@ class PantallaAvatar(Pantalla):
             Ninguna.
         """
         self.ctx.avatares.seleccionar_predeterminado(self.ctx.id_usuario, avatar.id)
-        self.exito(f"Avatar «{avatar.nombre}» seleccionado.")
+        self.exito(f"Avatar «{personajes.NOMBRES[avatar.id]}» seleccionado.")
 
     def _subir(self) -> None:
         """
@@ -109,10 +110,12 @@ class PantallaAvatar(Pantalla):
             r = self._rect_miniatura(i)
             elegido = actual.tipo == "predeterminado" and actual.valor == av.id
             pygame.draw.rect(superficie, ACENTO if elegido else PANEL, r.inflate(10, 10), border_radius=8)
-            superficie.blit(self.ctx.avatares.dibujar_predeterminado(av, self.MINIATURA), r)
+            superficie.blit(personajes.imagen(av.id, self.MINIATURA), r)
+            etiqueta = self.fuente_chica.render(personajes.NOMBRES[av.id], True, (236, 244, 245))
+            superficie.blit(etiqueta, etiqueta.get_rect(midtop=(r.centerx, r.bottom+9)))
         pygame.draw.rect(superficie, ACENTO if actual.tipo == "personalizado" else PANEL, (560, 280, 148, 148),
                          border_radius=8)
-        superficie.blit(self.ctx.avatares.obtener_superficie(self.ctx.id_usuario, 128), (570, 290))
+        superficie.blit(personajes.de_usuario(self.ctx.avatares, self.ctx.id_usuario, 128), (570, 290))
         self.texto(superficie, "Avatar actual", (570, 435))
         self.dibujar_botones(superficie)
 

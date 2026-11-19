@@ -1,6 +1,7 @@
 """Repositorios del cliente para leer y modificar el estado en el servidor."""
 
 from dataclasses import asdict
+from frontend.escenarios import ConfiguracionEscenario
 from typing import Optional
 
 from shared.data import (
@@ -62,7 +63,7 @@ class RepositorioPartidaServidor(RepositorioPartida):
             raise ValueError("El servidor devolvió un estado de partida inválido.")
         try:
             return Partida(
-                ConfiguracionPartida(**datos.get("configuracion", {})),
+                ConfiguracionEscenario(**datos.get("configuracion", {})),
                 datos.get("estado", "esperando"),
                 datos.get("iniciada_en"),
                 [Jugador(**jugador) for jugador in datos.get("jugadores", [])],

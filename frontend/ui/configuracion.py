@@ -1,4 +1,6 @@
 """Edición y guardado de las reglas configurables de la partida."""
+from frontend.escenarios import MAPAS, indice_mapa
+from frontend import visual as v
 
 from dataclasses import replace
 from typing import List
@@ -34,7 +36,9 @@ class PantallaConfiguracion(Pantalla):
         """
         super().__init__(ctx)
         ctx.partida.verificar_configurable()
-        self.cfg = replace(ctx.partida.obtener_partida().configuracion)
+        from dataclasses import asdict
+        from frontend.escenarios import ConfiguracionEscenario
+        self.cfg = ConfiguracionEscenario(**asdict(ctx.partida.obtener_partida().configuracion))
 
     def _campo_valor(self):
         """
@@ -66,6 +70,9 @@ class PantallaConfiguracion(Pantalla):
         """
         setattr(self.cfg, campo, max(minimo, min(maximo, getattr(self.cfg, campo) + delta)))
 
+    def _siguiente_mapa(self):
+        self.cfg.escenario = (self.cfg.escenario + 1) % len(MAPAS)
+
     def _alternar_modo(self) -> None:
         """
         Descripción:
@@ -89,7 +96,11 @@ class PantallaConfiguracion(Pantalla):
             Ninguna.
         """
         self.ctx.partida.actualizar_configuracion(self.cfg)
-        self.exito("Configuración guardada.")
+        confirmada = self.ctx.partida.obtener_partida().configuracion
+        if indice_mapa(confirmada) != self.cfg.escenario:
+            self.mensaje = "Reglas guardadas. El servidor aún usa el mapa original."
+        else:
+            self.exito("Configuración guardada.")
 
     def botones(self) -> List[Boton]:
         """
@@ -110,6 +121,7 @@ class PantallaConfiguracion(Pantalla):
             Boton(pygame.Rect(540, 180, 40, 36), "+", lambda: self._cambiar(campo, paso, minimo, maximo)),
             Boton(pygame.Rect(420, 250, 40, 36), "-", lambda: self._cambiar("segundos_congelacion", -1, 1, 30)),
             Boton(pygame.Rect(540, 250, 40, 36), "+", lambda: self._cambiar("segundos_congelacion", 1, 1, 30)),
+            Boton(pygame.Rect(60, 298, 520, 38), f"Escenario inicial · {MAPAS[self.cfg.escenario].nombre}   ›", self._siguiente_mapa),
             Boton(pygame.Rect(60, 350, 200, 40), "Guardar", self._guardar, EXITO),
             Boton(pygame.Rect(280, 350, 200, 40), "Volver", lambda: "volver", GRIS)]
 
@@ -129,5 +141,8 @@ class PantallaConfiguracion(Pantalla):
         self.texto(superficie, str(getattr(self.cfg, campo)), (475, 190), self.fuente)
         self.texto(superficie, "Segundos congelado", (60, 260), self.fuente)
         self.texto(superficie, str(self.cfg.segundos_congelacion), (475, 260), self.fuente)
+        i = self.cfg.escenario
+        ancho = min(290, superficie.get_width()-626)
+        superficie.blit(pygame.transform.smoothscale(v.tablero(MAPAS[i], i, 36), (ancho, ancho*15//21)), (604, 116))
         self.dibujar_botones(superficie)
 
