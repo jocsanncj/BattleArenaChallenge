@@ -1,4 +1,5 @@
 import hashlib
+from contextlib import closing
 from pathlib import Path
 import tempfile
 import time
@@ -71,6 +72,40 @@ class GameServerIntegrationTests(unittest.TestCase):
     @staticmethod
     def _headers(token):
         return {"Authorization": f"Bearer {token}"}
+
+    def test_google_crea_perfiles_distintos_y_conserva_el_nombre_al_reingresar(self):
+        for uid in ("google-uno", "google-dos"):
+            with self.subTest(uid=uid):
+                claims = {
+                    "uid": uid, "email": f"{uid}@example.test", "email_verified": True,
+                    "name": "A@lex", "firebase": {"sign_in_provider": "google.com"},
+                }
+                self.identities[uid] = claims
+                headers = self._headers(uid)
+                respuesta = self.client_one.post("/api/profile", json={}, headers=headers)
+                nombre = "Alex-" + hashlib.sha256(uid.encode()).hexdigest()[:12]
+                self.assertEqual(respuesta.status_code, 200)
+                self.assertEqual(respuesta.json["user"]["name"], nombre)
+                claims["name"] = "Otro nombre"
+                repetida = self.client_one.post("/api/profile", json={}, headers=headers)
+                self.assertEqual(repetida.json["user"]["name"], nombre)
+
+    def test_solo_google_verificado_puede_crear_un_perfil_sin_indicar_nombre(self):
+        claims = {
+            "uid": "nueva-cuenta", "email": "nuevo@example.test",
+            "firebase": {"sign_in_provider": "google.com"}, "email_verified": False,
+        }
+        self.identities["nueva-cuenta"] = claims
+        headers = self._headers("nueva-cuenta")
+        self.assertEqual(self.client_one.post("/api/profile", json={}, headers=headers).status_code, 403)
+        claims.update(email_verified=True, firebase={"sign_in_provider": "password"})
+        self.assertEqual(self.client_one.post("/api/profile", json={}, headers=headers).status_code, 403)
+        self.assertEqual(self.client_one.get("/api/profile", headers=headers).status_code, 404)
+        registrada = self.client_one.post("/api/profile", json={"name": "Jugador"}, headers=headers)
+        self.assertEqual(registrada.json["user"]["name"], "Jugador")
+        claims["firebase"] = {"sign_in_provider": "google.com"}
+        vinculada = self.client_one.post("/api/profile", json={}, headers=headers)
+        self.assertEqual(vinculada.json["user"]["name"], "Jugador")
 
     def _preparar_partida_reactor(self, target_score=20, tokens=("token-one", "token-two")):
         clients = (self.client_one, self.client_two, self.client_three)
@@ -361,7 +396,7 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertEqual(profile.json["user"]["statistics"]["points_accumulated"], 1)
         self.assertEqual(profile.json["user"]["match_history"][0]["result"], "victoria")
 
-        with servidor.repo._con() as con:
+        with closing(servidor.repo._con()) as con:
             self.assertEqual(
                 con.execute("SELECT COUNT(*) FROM partidas").fetchone()[0],
                 2,
@@ -468,7 +503,7 @@ class GameServerIntegrationTests(unittest.TestCase):
         )
         self.assertFalse(profile["match_history"][0]["new_record"])
 
-        with servidor.repo._con() as con:
+        with closing(servidor.repo._con()) as con:
             self.assertEqual(
                 con.execute(
                     "SELECT COUNT(*) FROM partidas WHERE match_id = ?",

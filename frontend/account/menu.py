@@ -1,9 +1,11 @@
 """Navegación de bienvenida, autenticación, verificación y perfil."""
 
 import pygame
+from frontend.auth.google_web import abrir_login_google, descartar_login_google
 
 from frontend.auth.service import (
     CorreoPendiente,
+    activar_acceso_google,
     autenticar_usuario,
     cerrar_sesion,
     obtener_usuario,
@@ -35,6 +37,7 @@ class MainMenuScene(BaseScene):
         self.status = ""
         self.user_name = ""
         self.current_user = {}
+        self.intento_google = None
         # Lleva la cuenta local de fallos consecutivos de inicio de sesión.
         self.failed_attempts = 0
         self.last_login_identifier = ""
@@ -58,6 +61,8 @@ class MainMenuScene(BaseScene):
     ## @param page Identificador interno de pantalla.
     ## @return None.
     def _set_page(self, page):
+        descartar_login_google(self.intento_google)
+        self.intento_google = None
         # Guarda la pantalla que determinará dibujo, campos y navegación.
         self.page = page
         # Elimina mensajes de estado pertenecientes a la página anterior.
@@ -97,7 +102,8 @@ class MainMenuScene(BaseScene):
             ]
             self._button(250, 375, 190, "Entrar", self._iniciar_sesion)
             self._button(460, 375, 190, "Recuperar contraseña", self._abrir_recuperacion)
-            self._button(355, 445, 190, "Volver", lambda: self._set_page("welcome"))
+            self._button(250, 445, 245, "Continua con Google", self._iniciar_sesion_google)
+            self._button(510, 445, 140, "Volver", lambda: self._set_page("welcome"))
         elif self.page == "email_pending":
             self._button(250, 365, 190, "Reenviar enlace", self._reenviar_verificacion)
             self._button(460, 365, 190, "Volver al inicio", lambda: self._set_page("login"))
@@ -166,9 +172,35 @@ class MainMenuScene(BaseScene):
             self._set_page("email_error")
             self.status = message
 
+    def _iniciar_sesion_google(self):
+        self.intento_google = abrir_login_google()
+        if self.intento_google:
+            self.status = "Continua en tu navegador para iniciar sesion."
+        else:
+            self.status = "No se pudo abrir el navegador."
+
+    def _finalizar_sesion_google(self, intento):
+        if intento is not self.intento_google:
+            return
+        try:
+            sesion, perfil = intento.resultado.result()
+        except RuntimeError as error:
+            descartar_login_google(intento)
+            self.intento_google = None
+            self.status = str(error)
+            return
+        # US29 abre el mismo menú que el acceso con contraseña (US03).
+        # Desde allí, la sala aplica las reglas de inicio y cupo de US09 y US10.
+        activar_acceso_google(sesion)
+        self.failed_attempts = 0
+        self.current_user = perfil
+        self._mostrar_menu(str(perfil["name"]))
+
     ## @brief Envía credenciales e interpreta éxito, errores y fallos consecutivos.
     ## @return None.
     def _iniciar_sesion(self):
+        descartar_login_google(self.intento_google)
+        self.intento_google = None
         # Lee el identificador y contraseña de los campos visibles.
         identificador, password = (field.texto for field in self.fields)
         # Guarda el identificador para recuperación o reenvío posteriores.
@@ -350,12 +382,19 @@ class MainMenuScene(BaseScene):
             elif self.page == "recovery_request":
                 self._solicitar_recuperacion()
 
-    ## @brief Actualiza la escena; no se requieren animaciones por ahora.
+    ## @brief Recoge el resultado del navegador en el hilo de Pygame cuando termina el intento de Google.
     ## @param mouse_pos Posición actual del cursor.
     ## @return None.
     def update(self, mouse_pos):
-        # El método se conserva para cumplir la interfaz común de BaseScene.
-        return
+        intento = self.intento_google
+        if intento is None:
+            return
+        if intento.cancelado.is_set():
+            descartar_login_google(intento)
+            self.intento_google = None
+            self.status = "Acceso con Google cancelado."
+        elif intento.resultado.done():
+            self._finalizar_sesion_google(intento)
 
     ## @brief Dibuja una línea de texto alineada al centro de la superficie.
     ## @param surface Superficie de destino.

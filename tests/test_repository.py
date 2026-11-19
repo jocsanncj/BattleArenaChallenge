@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from backend.repository import SQLiteRepository
@@ -109,7 +110,7 @@ class SQLiteRepositoryTests(unittest.TestCase):
 
     def test_migrates_existing_partidas_table_without_losing_rows(self):
         legacy_path = Path(self.temp.name) / "legacy.db"
-        with sqlite3.connect(legacy_path) as con:
+        with closing(sqlite3.connect(legacy_path)) as con, con:
             con.executescript(
                 """
                 CREATE TABLE jugadores (

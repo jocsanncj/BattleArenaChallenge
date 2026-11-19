@@ -7,18 +7,23 @@ import time
 from functools import wraps
 from pathlib import Path
 import firebase_admin
+from dotenv import load_dotenv
 from firebase_admin import auth, credentials
 from firebase_admin.exceptions import FirebaseError
 from flask import Flask, jsonify, request
 from backend.repository import (DuplicateEmail, DuplicateUsername, RepositoryError,SQLiteRepository, UserNotFound)
 from shared.domain import ARENA_PREDETERMINADA
+from shared.identidad import nombre_jugador_google
 from shared.game.arena import MultiplayerArena
 from shared.game.rules import GameRules
 from shared.game.obstacles import GestorObstaculos
 from shared.game.guardians import GestorGuardianes
 from shared.game.events import GestorEventosPartida
+from server.movil import movil
 
+load_dotenv()
 app = Flask(__name__)
+app.register_blueprint(movil)
 
 
 class ForbiddenOperation(PermissionError):
@@ -37,11 +42,15 @@ def _firebase_app():
         try:
             return firebase_admin.get_app()
         except ValueError:
-            ruta = os.getenv("FIREBASE_ADMIN_CREDENTIALS", "").strip()
-            if not ruta:
-                raise RuntimeError("Configura FIREBASE_ADMIN_CREDENTIALS en el servidor.")
+            configurada = os.getenv("FIREBASE_ADMIN_CREDENTIALS", "").strip()
+            ruta = Path(configurada) if configurada else Path(__file__).resolve().parents[1] / "firebase-admin.json"
+            if not ruta.is_file():
+                raise RuntimeError(
+                    "Falta el archivo de credenciales de Firebase Admin. Coloca firebase-admin.json "
+                    "en la raíz del proyecto o configura FIREBASE_ADMIN_CREDENTIALS con la ruta del archivo."
+                )
             try:
-                return firebase_admin.initialize_app(credentials.Certificate(ruta))
+                return firebase_admin.initialize_app(credentials.Certificate(str(ruta)))
             except (OSError, ValueError, FirebaseError) as e:
                 raise RuntimeError("No se pudo inicializar Firebase Admin.") from e
 
@@ -57,7 +66,7 @@ def requiere_sesion(f):
             claims = auth.verify_id_token(token, app=_firebase_app(), check_revoked=True)
         except (FirebaseError, ValueError) as e:
             raise PermissionError("La sesión de Firebase no es válida.") from e
-        if not isinstance(claims.get("uid"), str) or not isinstance(claims.get("email"), str):
+        if not all(isinstance(claims.get(k), str) and claims[k].strip() for k in ("uid", "email")):
             raise PermissionError("La sesión no incluye una identidad válida.")
         return f(claims, *args, **kwargs)
     return interior
@@ -110,7 +119,22 @@ def leer_perfil(claims):
 @app.post("/api/profile")
 @requiere_sesion
 def guardar_perfil(claims):
-    nombre = (request.get_json(silent=True) or {}).get("name")
+    formulario = request.get_json(silent=True)
+    if not isinstance(formulario, dict):
+        raise ValueError("Envía un objeto JSON para crear el perfil.")
+    if formulario == {}:
+        # En el primer acceso con Google (US29), el móvil envía {}. El servidor
+        # calcula el nombre inicial con los datos del token que validó requiere_sesion.
+        firebase = claims.get("firebase")
+        if (
+            not isinstance(firebase, dict)
+            or firebase.get("sign_in_provider") != "google.com"
+            or claims.get("email_verified") is not True
+        ):
+            raise ForbiddenOperation("El perfil automático requiere una cuenta de Google verificada.")
+        nombre = nombre_jugador_google(claims["uid"], claims["email"], claims.get("name"))
+    else:
+        nombre = formulario.get("name")
     if not isinstance(nombre, str) or not nombre.strip() or len(nombre) > 40:
         raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
     repo.crear(claims["uid"], nombre.strip(), claims["email"])
@@ -471,6 +495,20 @@ def guardar_avatar_juego(claims):
         _guardar_estado_juego(estado)
     return {"ok": True}
 
+# Al integrar US23, generar el plano a partir del escenario elegido para la partida.
+# El móvil (US30) lee plano[y][x] para situar jugadores y obstáculos en las mismas casillas.
+_MAPA_ARENA = {
+    "columnas": ARENA_PREDETERMINADA.columnas,
+    "filas": ARENA_PREDETERMINADA.filas,
+    "plano": [
+        "".join(
+            ARENA_PREDETERMINADA.casilla_en(x, y).value
+            for x in range(ARENA_PREDETERMINADA.columnas)
+        )
+        for y in range(ARENA_PREDETERMINADA.filas)
+    ],
+}
+
 @app.get("/api/game/state")
 @requiere_sesion
 def leer_partida_juego(claims):
@@ -484,7 +522,7 @@ def leer_partida_juego(claims):
             estado_guardado["partida"] = partida
             _guardar_estado_juego(estado_guardado)
         juego = _estado_arena()
-        return {"partida": partida, "game": juego}
+        return {"partida": partida, "game": juego, "mapa": _MAPA_ARENA}
 
 @app.post("/api/game/join")
 @requiere_sesion

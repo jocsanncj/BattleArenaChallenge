@@ -3,9 +3,12 @@
 Capas:  Escenas (UI)  ->  ServicioAuth (este archivo)  ->  ClientesHttp (Firebase y servidor)
 """
 
+import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
+
+from shared.identidad import nombre_jugador_google
 
 from .http_client import (
     AuthError,
@@ -13,12 +16,14 @@ from .http_client import (
     CorreoPendiente,
     CredencialesInvalidas,
     FirebaseAuth,
+    PerfilNoEncontrado,
 )
 
 # ------------------------------------------- abstracciones (Inversión de dependencias)
 class ProveedorIdentidad(Protocol):
     def registrar(self, correo: str, password: str) -> dict: ...
     def iniciar_sesion(self, correo: str, password: str) -> dict: ...
+    def iniciar_sesion_google(self, credencial: str) -> dict: ...
     def renovar(self, refresh_token: str) -> dict: ...
     def datos_cuenta(self, id_token: str) -> dict: ...
     def poner_nombre(self, id_token: str, nombre: str) -> None: ...
@@ -36,8 +41,8 @@ class ApiPerfiles(Protocol):
 # ------------------------------------------------------ dominio y servicio
 @dataclass
 class Sesion:
-    id_token: str
-    refresh_token: str
+    id_token: str = field(repr=False)
+    refresh_token: str = field(repr=False)
     email: str
     nombre: str | None = None
 
@@ -113,6 +118,35 @@ class ServicioAuth:
         self._sesion.nombre = perfil.get("name", nombre)
         return perfil
 
+    def preparar_acceso_google(self, credencial: str) -> tuple[Sesion, dict]:
+        """Verifica el acceso y carga el perfil antes de activar la sesión del juego."""
+        respuesta = self._identidad.iniciar_sesion_google(credencial)
+        if respuesta.get("needConfirmation"):
+            raise AuthError("Este correo ya tiene una cuenta. Usa su método de acceso original.")
+        if respuesta.get("providerId") != "google.com" or respuesta.get("emailVerified") is not True:
+            raise AuthError("Firebase no confirmó un correo verificado de Google.")
+        uid = respuesta.get("localId")
+        correo = respuesta.get("email")
+        token = respuesta.get("idToken")
+        refresh = respuesta.get("refreshToken")
+        if not all(isinstance(valor, str) and valor for valor in (uid, correo, token, refresh)):
+            raise AuthError("Firebase no devolvió una sesión completa.")
+
+        try:
+            perfil = self._servidor.obtener_perfil(token)
+        except PerfilNoEncontrado:
+            # En el primer acceso, escritorio y móvil usan la misma regla para nombrar el perfil de US04.
+            nombre = nombre_jugador_google(uid, correo, respuesta.get("displayName"))
+            perfil = self._servidor.guardar_perfil(token, nombre)
+
+        nombre_perfil = perfil.get("name")
+        if not isinstance(nombre_perfil, str) or not nombre_perfil.strip():
+            raise AuthError("El servidor no devolvió un nombre de jugador válido.")
+        return Sesion(token, refresh, correo, nombre_perfil), perfil
+
+    def activar_acceso_google(self, sesion: Sesion) -> None:
+        self._sesion = sesion
+
     def obtener_perfil(self) -> dict:
         return self._servidor.obtener_perfil(self._token(renovar=True))
 
@@ -144,6 +178,8 @@ class ServicioAuth:
 _servicio = ServicioAuth(FirebaseAuth(), ClienteServidor())
 registrar_usuario = _servicio.registrar
 autenticar_usuario = _servicio.autenticar
+preparar_acceso_google = _servicio.preparar_acceso_google
+activar_acceso_google = _servicio.activar_acceso_google
 obtener_usuario = _servicio.obtener_perfil
 reenviar_verificacion = _servicio.reenviar_verificacion
 solicitar_recuperacion = _servicio.recuperar_contrasena
@@ -170,7 +206,6 @@ def cliente_juego() -> ClienteServidor:
 
 def id_usuario_actual() -> int:
     """Genera un identificador entero estable a partir del UID de Firebase para el modelo legado."""
-    import hashlib
     token = token_para_juego()
     cuenta = _servicio._identidad.datos_cuenta(token)
     uid = str(cuenta.get("localId", ""))

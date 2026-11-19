@@ -14,6 +14,10 @@ class CredencialesInvalidas(AuthError):
 class CorreoPendiente(AuthError):
     """La cuenta existe pero su correo aún no está verificado."""
 
+
+class PerfilNoEncontrado(AuthError):
+    """La cuenta está autenticada, pero todavía no tiene perfil en el juego."""
+
 MENSAJES_FIREBASE = {
     "EMAIL_EXISTS": "Ese correo ya tiene una cuenta.",
     "INVALID_EMAIL": "La dirección de correo no es válida.",
@@ -27,9 +31,10 @@ CODIGOS_CREDENCIALES = {"INVALID_PASSWORD", "INVALID_LOGIN_CREDENTIALS", "EMAIL_
 # ------------------------------------------------------------- HTTP común
 class _ErrorHttp(Exception):
     """Respuesta HTTP de error; guarda el cuerpo JSON para que lo interprete el adaptador."""
-    def __init__(self, cuerpo: dict):
+    def __init__(self, cuerpo: dict, estado: int):
         super().__init__("error HTTP")
         self.cuerpo = cuerpo
+        self.estado = estado
 
 def _json(datos: bytes) -> dict:
     try:
@@ -44,7 +49,7 @@ def _enviar(request: Request, timeout: int = 15) -> dict:
         with urlopen(request, timeout=timeout) as respuesta:
             datos = respuesta.read()
     except HTTPError as error:
-        raise _ErrorHttp(_json(error.read())) from error
+        raise _ErrorHttp(_json(error.read()), error.code) from error
     except (URLError, TimeoutError, OSError) as error:
         raise AuthError(f"No se pudo conectar con el servicio: {error}") from error
     return _json(datos)
@@ -82,6 +87,14 @@ class FirebaseAuth:
         return self._llamar("signUp", {"email": correo, "password": password,"returnSecureToken": True})
     def iniciar_sesion(self, correo, password):
         return self._llamar("signInWithPassword", {"email": correo, "password": password,"returnSecureToken": True})
+
+    def iniciar_sesion_google(self, credencial: str) -> dict:
+        """Canjea la credencial de Google por los tokens de Firebase que usa la API del juego."""
+        return self._llamar("signInWithIdp", {
+            "requestUri": "http://localhost",
+            "postBody": urlencode({"providerId": "google.com", "access_token": credencial}),
+            "returnSecureToken": True,
+        })
     def renovar(self, refresh_token):
         form = urlencode({"grant_type": "refresh_token", "refresh_token": refresh_token})
         request = Request(f"{self.URL_TOKEN}?key={self._key()}", form.encode("utf-8"),{"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
@@ -120,6 +133,8 @@ class ClienteServidor:
         try:
             return _enviar(Request(url, datos, cabeceras, method=metodo), timeout=10)
         except _ErrorHttp as error:
+            if metodo == "GET" and ruta == "/api/profile" and error.estado == 404:
+                raise PerfilNoEncontrado("No existe el perfil del jugador.") from error
             raise AuthError(str(error.cuerpo.get("error", "El servidor rechazó la solicitud."))) from error
     @staticmethod
     def _perfil(respuesta: dict) -> dict:
