@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Battle Arena Challenge</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='movil.css') }}">
+  <script id="firebase-config" type="application/json">{{ firebase_config | tojson }}</script>
+  <script type="module" src="{{ url_for('static', filename='movil.js') }}"></script>
+</head>
+<body>
+    <main>
+        <header>
+            <h1>Battle Arena Challenge</h1>
+            <button type="button" id="salir" hidden>Cerrar sesión</button>
+        </header>
+
+        <div class="panel" id="autenticacion">
+            <section id="bienvenida">
+                <h2 tabindex="-1">Bienvenido a la arena</h2>
+                <button type="button" data-vista="acceso">Iniciar sesión</button>
+                <button type="button" class="secundario" data-vista="registro">Crear cuenta</button>
+            </section>
+            <section id="acceso" hidden>
+                <h2 tabindex="-1">Iniciar sesión</h2>
+                <form id="formulario" method="post">
+                    <label for="identificador">Usuario o correo</label>
+                    <input id="identificador" name="identificador" type="text" maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+                    <label for="contrasena">Contraseña</label>
+                    <input id="contrasena" name="contrasena" type="password" autocomplete="current-password" required>
+                    <button id="entrar" type="submit" data-remoto disabled>Entrar</button>
+                </form>
+                <button id="google" class="secundario" type="button" data-remoto disabled>Continuar con Google</button>
+                <div class="enlaces-acceso">
+                    <button id="abrir-recuperacion" type="button" data-vista="recuperacion">Recuperar contraseña</button>
+                    <button type="button" data-vista="bienvenida">Volver</button>
+                </div>
+            </section>
+            <section id="registro" hidden>
+                <h2 tabindex="-1">Crear cuenta</h2>
+                <form id="form-registro" method="post">
+                    <label for="nombre-registro">Nombre de usuario</label>
+                    <input id="nombre-registro" name="nombre" maxlength="40" autocomplete="username" required>
+                    <label for="correo-registro">Correo electrónico</label>
+                    <input id="correo-registro" name="correo" type="email" maxlength="254" autocomplete="email" required>
+                    <label for="clave-registro">Contraseña</label>
+                    <input id="clave-registro" name="clave" type="password" minlength="8" autocomplete="new-password" aria-describedby="regla-clave" required>
+                    <small id="regla-clave">Al menos 8 caracteres, con letras y números.</small>
+                    <label for="confirmacion">Confirmar contraseña</label>
+                    <input id="confirmacion" name="confirmacion" type="password" autocomplete="new-password" required>
+                    <button type="submit" data-remoto disabled>Crear cuenta</button>
+                </form>
+                <button class="volver" type="button" data-vista="bienvenida">Volver</button>
+            </section>
+            <section id="verificacion" hidden>
+                <h2 tabindex="-1">Verifica tu correo</h2>
+                <form id="form-verificacion" method="post">
+                    <div id="elegir-nombre" hidden>
+                        <label for="nombre-pendiente">Elige otro nombre de usuario</label>
+                        <input id="nombre-pendiente" maxlength="40" autocomplete="username">
+                    </div>
+                    <button type="submit" data-remoto disabled>Reenviar enlace</button>
+                </form>
+                <button class="volver" type="button" data-vista="acceso">Volver al inicio de sesión</button>
+            </section>
+            <section id="recuperacion" hidden>
+                <h2 tabindex="-1">Recuperar contraseña</h2>
+                <form id="form-recuperacion" method="post">
+                    <label for="cuenta-recuperacion">Usuario o correo</label>
+                    <input id="cuenta-recuperacion" maxlength="254" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+                    <button type="submit" data-remoto disabled>Enviar enlace</button>
+                </form>
+                <button class="volver" type="button" data-vista="acceso">Volver</button>
+            </section>
+            <section id="recuperacion-enviada" hidden>
+                <h2 tabindex="-1">Recuperación de contraseña</h2>
+                <p>Si la cuenta existe, recibirás un enlace por correo para definir una contraseña nueva.</p>
+                <button type="button" data-vista="acceso">Volver al inicio de sesión</button>
+            </section>
+            <p id="estado-acceso" role="status"></p>
+            <button id="reintentar-conexion" type="button" class="secundario" hidden>Reintentar conexión</button>
+            <noscript>Activa JavaScript para iniciar sesión o crear tu cuenta.</noscript>
+        </div>
+
+        {# US30 muestra estas vistas cuando Firebase autentica al jugador y la API devuelve su perfil de US04. #}
+        <div id="cuenta" hidden>
+            <p id="estado-cuenta" role="status"></p>
+            <nav aria-label="Cuenta del jugador">
+                <a href="#partida">Jugar online</a>
+                <a href="#perfil">Perfil</a>
+                <a href="#historial">Historial</a>
+                <a href="#ranking">Ranking</a>
+            </nav>
+            <section class="panel" id="perfil" aria-labelledby="titulo-perfil">
+                <h2 id="titulo-perfil">Perfil</h2>
+                <p id="jugador"></p>
+                <button type="button" id="actualizar-perfil">Actualizar perfil e historial</button>
+                <dl id="estadisticas"></dl>
+            </section>
+            <section class="panel" id="historial" aria-labelledby="titulo-historial">
+                <h2 id="titulo-historial">Historial de partidas</h2>
+                <p id="estado-historial" role="status"></p>
+                <ul class="lista" id="partidas"></ul>
+            </section>
+            <section class="panel" id="ranking" aria-labelledby="titulo-ranking">
+                <div class="titulo-seccion">
+                    <h2 id="titulo-ranking">Ranking</h2>
+                    <button type="button" id="actualizar-ranking">Actualizar</button>
+                </div>
+                <p id="estado-ranking" role="status"></p>
+                <ol class="lista" id="posiciones"></ol>
+            </section>
+            <section class="panel" id="partida" aria-labelledby="titulo-partida">
+                <h2 id="titulo-partida">Partida</h2>
+                <button type="button" id="actualizar-partida">Actualizar partida</button>
+                <label for="avatar-partida">Avatar</label>
+                <select id="avatar-partida">
+                    <option value="">Elige un avatar</option>
+                    {% for avatar in avatares %}
+                    <option value="{{ avatar.id }}">{{ avatar.nombre }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" id="guardar-avatar">Guardar avatar</button>
+                <p id="aviso-avatar" role="status"></p>
+                <button type="button" id="unirse-sala">Unirse a la sala</button>
+                <button type="button" id="abandonar-sala">Abandonar sala</button>
+                <button type="button" id="iniciar-partida">Iniciar partida</button>
+                <p id="aviso-sala" role="status"></p>
+                <p id="estado-partida" role="status"></p>
+                <canvas id="arena-movil" aria-label="Mapa de la arena" hidden></canvas>
+                <fieldset id="controles-arena">
+                    <legend>Movimiento</legend>
+                    <button type="button" data-direction="up" aria-label="Arriba">↑</button>
+                    <button type="button" data-direction="down" aria-label="Abajo">↓</button>
+                    <button type="button" data-direction="left" aria-label="Izquierda">←</button>
+                    <button type="button" data-direction="right" aria-label="Derecha">→</button>
+                </fieldset>
+                <p id="aviso-movimiento" role="status"></p>
+                <p id="estado-reactor" role="status"></p>
+                <button type="button" id="extraer-energia">Extraer energía</button>
+                <button type="button" id="cancelar-extraccion" disabled>Cancelar extracción</button>
+                <p id="aviso-reactor" role="status"></p>
+                <ul class="lista" id="marcador-partida"></ul>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

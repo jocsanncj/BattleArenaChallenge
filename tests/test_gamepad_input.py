@@ -7,9 +7,8 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
 import pygame
 
-from acciones import ControlEntrada, MODO_GAMEPAD, MODO_TECLADO
-from us10 import MultiplayerArena
-from us110 import MultiplayerArena as MultiplayerArenaCompat
+from frontend.actions import ControlEntrada, MODO_GAMEPAD, MODO_TECLADO
+from shared.game.arena import MultiplayerArena
 
 
 class GamepadInputTests(unittest.TestCase):
@@ -19,8 +18,8 @@ class GamepadInputTests(unittest.TestCase):
     def tearDown(self):
         pygame.quit()
 
-    def test_us110_reexports_the_us10_arena(self):
-        self.assertIs(MultiplayerArenaCompat, MultiplayerArena)
+    def test_shared_game_arena_exposes_server_gameplay(self):
+        self.assertTrue(callable(MultiplayerArena))
 
     def test_keyboard_direction_tracks_key_press_and_release(self):
         control = ControlEntrada()
@@ -32,7 +31,7 @@ class GamepadInputTests(unittest.TestCase):
         self.assertIsNone(control.direccion_actual())
 
     def test_gamepad_mode_requires_a_connected_controller(self):
-        with patch("acciones.pygame.joystick.get_count", return_value=0):
+        with patch("frontend.actions.pygame.joystick.get_count", return_value=0):
             control = ControlEntrada()
             with self.assertRaisesRegex(ValueError, "No se detectó un gamepad"):
                 control.seleccionar(MODO_GAMEPAD)
@@ -47,8 +46,8 @@ class GamepadInputTests(unittest.TestCase):
         joystick.get_axis.side_effect = [0.0, 0.0]
 
         with (
-            patch("acciones.pygame.joystick.get_count", return_value=1),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
+            patch("frontend.actions.pygame.joystick.get_count", return_value=1),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
         ):
             control = ControlEntrada()
             control.seleccionar(MODO_GAMEPAD)
@@ -64,14 +63,12 @@ class GamepadInputTests(unittest.TestCase):
             control.procesar_evento(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_w))
             self.assertIsNone(control.direccion_actual())
 
-    def test_gamepad_action_button_plays_effect_sound(self):
+    def test_gamepad_action_button_has_stable_id_until_released(self):
         joystick = Mock()
         joystick.get_instance_id.return_value = 7
-        sound = Mock()
         with (
-            patch("acciones.pygame.joystick.get_count", return_value=1),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
-            patch("acciones._sonido", sound),
+            patch("frontend.actions.pygame.joystick.get_count", return_value=1),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
         ):
             control = ControlEntrada()
             control.seleccionar(MODO_GAMEPAD)
@@ -82,17 +79,32 @@ class GamepadInputTests(unittest.TestCase):
                     button=0,
                 )
             )
+            event_id = control.accion_id
+            self.assertIsNotNone(event_id)
+            control.procesar_evento(
+                pygame.event.Event(
+                    pygame.JOYBUTTONDOWN,
+                    instance_id=7,
+                    button=0,
+                )
+            )
+            self.assertEqual(control.accion_id, event_id)
+            control.procesar_evento(
+                pygame.event.Event(
+                    pygame.JOYBUTTONUP,
+                    instance_id=7,
+                    button=0,
+                )
+            )
 
-        sound.play.assert_called_once_with()
+        self.assertIsNone(control.accion_id)
 
     def test_gamepad_action_button_is_ignored_when_keyboard_selected(self):
         joystick = Mock()
         joystick.get_instance_id.return_value = 7
-        sound = Mock()
         with (
-            patch("acciones.pygame.joystick.get_count", return_value=1),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
-            patch("acciones._sonido", sound),
+            patch("frontend.actions.pygame.joystick.get_count", return_value=1),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
         ):
             control = ControlEntrada()
             control.procesar_evento(
@@ -103,15 +115,31 @@ class GamepadInputTests(unittest.TestCase):
                 )
             )
 
-        sound.play.assert_not_called()
+        self.assertIsNone(control.accion_id)
+
+    def test_keyboard_action_has_stable_id_until_released(self):
+        control = ControlEntrada()
+
+        control.procesar_evento(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_e))
+        event_id = control.accion_id
+        self.assertIsNotNone(event_id)
+
+        control.procesar_evento(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_e))
+        self.assertEqual(control.accion_id, event_id)
+
+        control.procesar_evento(pygame.event.Event(pygame.KEYUP, key=pygame.K_e))
+        self.assertIsNone(control.accion_id)
+
+        control.procesar_evento(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_e))
+        self.assertNotEqual(control.accion_id, event_id)
 
     def test_disconnect_falls_back_to_keyboard(self):
         joystick = Mock()
         joystick.get_instance_id.return_value = 7
         counts = iter((1, 0))
         with (
-            patch("acciones.pygame.joystick.get_count", side_effect=lambda: next(counts)),
-            patch("acciones.pygame.joystick.Joystick", return_value=joystick),
+            patch("frontend.actions.pygame.joystick.get_count", side_effect=lambda: next(counts)),
+            patch("frontend.actions.pygame.joystick.Joystick", return_value=joystick),
         ):
             control = ControlEntrada()
             control.seleccionar(MODO_GAMEPAD)

@@ -1,0 +1,62 @@
+:root {
+  color-scheme: dark;
+  font: 100%/1.5 system-ui, sans-serif;
+  color: #eef2ff;
+  background: #111827;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; overflow-wrap: anywhere; }
+main { width: min(100%, 48rem); margin: auto; padding: 1rem; }
+header, nav, .titulo-seccion, .lista li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem;
+}
+h1 { font-size: clamp(1.45rem, 6vw, 2.2rem); line-height: 1.2; margin: 0; }
+h2 { font-size: 1.25rem; margin: 0; }
+nav { justify-content: flex-start; margin-top: 1rem; }
+nav a { display: inline-flex; align-items: center; min-height: 44px; color: #bfdbfe; padding: .25rem .65rem; }
+.panel { margin: 1rem 0; padding: clamp(.85rem, 4vw, 1.5rem); background: #1f2937; border: 1px solid #374151; border-radius: .8rem; }
+form { display: grid; gap: .5rem; }
+form button { margin-top: .6rem; }
+input, button { min-height: 44px; padding: .6rem .85rem; border: 1px solid #6b7280; border-radius: .45rem; font: inherit; }
+input { min-width: 0; background: #111827; }
+button { background: #1d4ed8; color: white; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: .65; cursor: default; }
+:focus-visible { outline: 3px solid #93c5fd; outline-offset: 3px; }
+#jugador { font-size: 1.15rem; font-weight: 650; }
+dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .6rem; margin: .5rem 0 0; }
+dl div { background: #111827; border-radius: .45rem; padding: .6rem; }
+dt { color: #cbd5e1; }
+dd { margin: .1rem 0 0; font-weight: 700; }
+.lista { margin: .5rem 0 0; padding: 0; list-style: none; }
+.lista li { border-top: 1px solid #475569; padding: .55rem 0; }
+[role="status"] { color: #cbd5e1; }
+[role="status"]:empty { margin: 0; }
+#arena-movil {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+main:has(#autenticacion:not([hidden])) {
+  max-width: 30rem;
+  padding-block: clamp(1.5rem, 8vh, 5rem);
+}
+#autenticacion { padding: clamp(1rem, 5vw, 2rem); }
+#autenticacion section { display: grid; gap: .85rem; }
+#autenticacion h2 { margin-bottom: .25rem; }
+#autenticacion label { font-weight: 550; }
+#autenticacion input { width: 100%; color: inherit; }
+#autenticacion small { color: #cbd5e1; }
+#autenticacion .secundario { background: transparent; border-color: #64748b; }
+#autenticacion .enlaces-acceso { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; }
+#autenticacion .enlaces-acceso button, #autenticacion .volver {
+  width: fit-content; padding-inline: .25rem; border: 0; color: #bfdbfe; background: transparent;
+}
+#autenticacion [role="status"]:not(:empty) { margin: 1rem 0 0; }
+#reintentar-conexion { margin-top: .75rem; }

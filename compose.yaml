@@ -11,6 +11,7 @@ services:
       PORT: 8000
       DATA_DIR: /data
       FIREBASE_ADMIN_CREDENTIALS: /run/secrets/firebase-admin.json
+      FIREBASE_API_KEY: ${FIREBASE_API_KEY:-}
     volumes:
       - battle-arena-data:/data
       - ./firebase-admin.json:/run/secrets/firebase-admin.json:ro
