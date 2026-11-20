@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY backend /app/backend
 COPY server /app/server
 COPY shared /app/shared
+COPY Media/escenarios.json /app/Media/escenarios.json
 
 EXPOSE 8000
 VOLUME ["/data"]

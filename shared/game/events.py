@@ -300,7 +300,7 @@ class GestorEventosPartida:
         if siguientes:
             siguiente = min(siguientes, key=lambda evento: evento["inicia_en"])
             proximo_evento = {
-                "id": siguiente["id"],
+                "id": siguiente["id"], "tipo": self._tipo(siguiente["id"]),
                 "segundos_restantes": max(0.0, siguiente["inicia_en"] - ahora),
             }
         return {
