@@ -55,7 +55,7 @@ class GestorGuardianes:
         reservadas = set(mapa.puntos_inicio())
         reservadas.update((t.x, t.y) for t in obstaculos.trampas)
         reservadas.update((p["x"], p["y"]) for p in obstaculos.puertas)
-        posiciones = self._buscar_posiciones_centro(4, reservadas)
+        posiciones = self._buscar_posiciones_extremos(4, reservadas)
         if len(posiciones) < 4:
             raise ValueError("No hay espacio suficiente para colocar los cuatro guardianes.")
 
@@ -88,11 +88,30 @@ class GestorGuardianes:
                 for x in range(1, self.mapa.columnas - 1)
                 if self.mapa.es_transitable(x, y) and (x, y) not in reservadas]
 
-    def _buscar_posiciones_centro(self, cantidad, reservadas):
+    def _puntos_extremos(self):
+        """Puntos medios de los cuatro bordes de la zona jugable (arriba, abajo, izquierda, derecha).
+
+        Las esquinas quedan libres porque son los puntos de inicio de los jugadores.
+        """
         cx, cy = (self.mapa.columnas - 1) / 2, (self.mapa.filas - 1) / 2
-        candidatas = self._casillas_validas(reservadas)
-        candidatas.sort(key=lambda p: ((p[0] - cx) ** 2 + (p[1] - cy) ** 2, p[1], p[0]))
-        return candidatas[:cantidad]
+        return ((cx, 1), (cx, self.mapa.filas - 2),
+                (1, cy), (self.mapa.columnas - 2, cy))
+
+    def _buscar_posiciones_extremos(self, cantidad, reservadas):
+        """Coloca los guardianes en los extremos del escenario, lejos del reactor del centro.
+
+        Para cada extremo elige la casilla válida libre más cercana; si está ocupada o
+        reservada (trampa, puerta, inicio), usa la siguiente más próxima.
+        """
+        libres = self._casillas_validas(reservadas)
+        elegidas = []
+        for objetivo in self._puntos_extremos()[:cantidad]:
+            disponibles = [p for p in libres if p not in elegidas]
+            if not disponibles:
+                break
+            elegidas.append(min(disponibles, key=lambda p: (
+                (p[0] - objetivo[0]) ** 2 + (p[1] - objetivo[1]) ** 2, p[1], p[0])))
+        return elegidas
 
     def _elegir_centro_vigilancia(self, guardian):
         otros = [g.get("zona") for g in self.guardianes if g.get("zona")]
