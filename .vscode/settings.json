@@ -1,5 +1,10 @@
 {"code-runner.executorMap": {
     "python": "/usr/bin/python3 -u"
 },
-"python.terminal.useEnvFile": true
+"python.terminal.useEnvFile": true,
+"python.testing.pytestArgs": [
+    "."
+],
+"python.testing.unittestEnabled": false,
+"python.testing.pytestEnabled": true
 }
