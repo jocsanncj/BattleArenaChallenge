@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Battle Arena Challenge</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='movil.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='movil-resultados.css') }}">
   <script id="firebase-config" type="application/json">{{ firebase_config | tojson }}</script>
   <script type="module" src="{{ url_for('static', filename='movil.js') }}"></script>
 </head>
@@ -111,23 +112,62 @@
                 <ol class="lista" id="posiciones"></ol>
             </section>
             <section class="panel" id="partida" aria-labelledby="titulo-partida">
-                <h2 id="titulo-partida">Partida</h2>
-                <button type="button" id="actualizar-partida">Actualizar partida</button>
-                <label for="avatar-partida">Avatar</label>
-                <select id="avatar-partida">
-                    <option value="">Elige un avatar</option>
-                    {% for avatar in avatares %}
-                    <option value="{{ avatar.id }}">{{ avatar.nombre }}</option>
-                    {% endfor %}
-                </select>
-                <button type="button" id="guardar-avatar">Guardar avatar</button>
-                <p id="aviso-avatar" role="status"></p>
-                <button type="button" id="unirse-sala">Unirse a la sala</button>
-                <button type="button" id="abandonar-sala">Abandonar sala</button>
-                <button type="button" id="iniciar-partida">Iniciar partida</button>
+                <script id="nombres-escenarios" type="application/json">{{ escenarios | tojson }}</script>
+                <script id="arte-arena" type="application/json">{{ catalogo_arte_arena() | tojson }}</script>
+                <div class="titulo-seccion">
+                    <h2 id="titulo-partida">Jugar online</h2>
+                    <button type="button" id="actualizar-partida">Actualizar partida</button>
+                </div>
+                <button type="button" id="musica-movil" aria-label="Música" hidden
+                        data-arena="{{ url_for('movil.musica_arena') }}"
+                        data-resultados="{{ url_for('movil.musica_resultados') }}">Activar música</button>
+                <section id="seleccion-personaje" aria-labelledby="titulo-seleccion">
+                    <h3 id="titulo-seleccion">Selecciona tu avatar</h3>
+                    <fieldset id="opciones-avatar" aria-labelledby="titulo-seleccion">
+                        {% for avatar in avatares %}
+                        <label class="opcion-personaje">
+                            <input type="radio" name="avatar" id="opcion-{{ avatar.id }}" value="{{ avatar.id }}"
+                                   data-nombre="{{ avatar.nombre }}" data-personaje="{{ avatar.personaje }}">
+                            <img src="{{ avatar.retrato }}" width="80" height="80" alt="">
+                            <span>{{ avatar.nombre }}</span>
+                        </label>
+                        {% endfor %}
+                        <label class="opcion-personaje" id="opcion-personalizada" hidden>
+                            <input type="radio" name="avatar" value="personalizado" data-nombre="Personalizado">
+                            <img width="80" height="80" alt="">
+                            <span>Personalizado</span>
+                        </label>
+                    </fieldset>
+                    <div class="vista-personaje">
+                        <img id="retrato-seleccionado" alt="" width="72" height="72" hidden>
+                        <div>Avatar actual<br><strong id="nombre-seleccionado">—</strong></div>
+                    </div>
+                    <div class="acciones-partida">
+                        <label class="cargar-retrato">Cargar imagen…
+                            <input type="file" id="archivo-avatar" accept="image/png,image/jpeg,image/webp">
+                        </label>
+                        <button type="button" id="unirse-sala" class="principal-juego" disabled>Continuar</button>
+                    </div>
+                    <p id="aviso-avatar" role="status"></p>
+                </section>
+                <section id="sala-espera" aria-labelledby="titulo-sala" hidden>
+                    <h3 id="titulo-sala">Sala de espera</h3>
+                    <h4 id="numero-jugadores">Jugadores (0/3)</h4>
+                    <ul class="lista" id="jugadores-sala"></ul>
+                    <h4>Configuración actual</h4>
+                    <dl id="configuracion-sala"></dl>
+                    {% include 'movil_configuracion.html' %}
+                    <button type="button" id="iniciar-partida" class="principal-juego" disabled>Iniciar partida</button>
+                </section>
                 <p id="aviso-sala" role="status"></p>
                 <p id="estado-partida" role="status"></p>
+                <section id="juego-activo" aria-labelledby="titulo-arena" hidden>
+                <div class="cabecera-arena">
+                    <h3 id="titulo-arena">Arena</h3>
+                    <span id="reloj-arena"></span>
+                </div>
                 <canvas id="arena-movil" aria-label="Mapa de la arena" hidden></canvas>
+                <div id="acciones-jugador">
                 <fieldset id="controles-arena">
                     <legend>Movimiento</legend>
                     <button type="button" data-direction="up" aria-label="Arriba">↑</button>
@@ -140,7 +180,11 @@
                 <button type="button" id="extraer-energia">Extraer energía</button>
                 <button type="button" id="cancelar-extraccion" disabled>Cancelar extracción</button>
                 <p id="aviso-reactor" role="status"></p>
+                </div>
                 <ul class="lista" id="marcador-partida"></ul>
+                </section>
+                {% include 'movil_resultados.html' %}
+                <button type="button" id="abandonar-sala" hidden>Volver</button>
             </section>
         </div>
     </main>

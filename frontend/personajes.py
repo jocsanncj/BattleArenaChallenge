@@ -2,10 +2,9 @@
 from functools import lru_cache
 from pathlib import Path
 import pygame
+from shared.domain.avatares import NOMBRES_PERSONAJES as NOMBRES
 
 MEDIA = Path(__file__).resolve().parents[1] / "Media"
-NOMBRES = dict(zip(("avatar_1", "avatar_2", "avatar_3", "avatar_4", "avatar_5"),
-                   ("Brasa", "Boreal", "Brote", "Áureo", "Nebulosa")))
 
 
 @lru_cache(maxsize=96)

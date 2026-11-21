@@ -133,7 +133,7 @@ def describir_configuracion(cfg: ConfiguracionPartida) -> List[str]:
         List[str]: dos líneas, por ejemplo ['Fin de partida: 5 minutos', 'Congelación: 3 s'].
     """
     fin = f"{cfg.minutos_fin} minutos" if cfg.modo_fin == "tiempo" else f"{cfg.puntos_fin} puntos"
-    return [f"Fin de partida: {fin}", f"Congelación: {cfg.segundos_congelacion} s", f"Mapa: {MAPAS[indice_mapa(cfg)].nombre}"]
+    return [f"Fin de partida: {fin}", f"Congelación: {cfg.segundos_congelacion} s", "Mapa: aleatorio con rotación" if getattr(cfg, "rotacion", False) else f"Mapa fijo: {MAPAS[indice_mapa(cfg)].nombre}"]
 
 
 # 4. AUDIO Y EXPLORADOR DE ARCHIVO

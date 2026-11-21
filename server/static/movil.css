@@ -60,3 +60,52 @@ main:has(#autenticacion:not([hidden])) {
 }
 #autenticacion [role="status"]:not(:empty) { margin: 1rem 0 0; }
 #reintentar-conexion { margin-top: .75rem; }
+
+#partida { background: #233042; }
+#partida h3 { margin: 1.15rem 0 .65rem; font-size: 1.2rem; }
+#partida h4 { margin: 1rem 0 .4rem; }
+#partida .principal-juego { background: #66e8c8; color: #142c31; border-color: #66e8c8; }
+#partida button:not(.principal-juego), .cargar-retrato {
+  background: #263444; color: #eef2ff; border: 1px solid #658198;
+}
+#partida button:disabled { opacity: .55; }
+#opciones-avatar { border: 0; padding: 0; margin: 0; display: grid; gap: .55rem; grid-template-columns: repeat(auto-fit, minmax(min(6rem, 100%), 1fr)); }
+.opcion-personaje {
+  position: relative; display: grid; justify-items: center; align-content: start; gap: .2rem;
+  padding: .5rem .2rem; border: 2px solid transparent; border-radius: .7rem;
+  background: #354052; color: #eef2ff; font-weight: 650; cursor: pointer;
+}
+.opcion-personaje img, .vista-personaje img { max-width: 100%; object-fit: contain; }
+.opcion-personaje:has(:checked) { background: #334f70; border-color: #72bbff; }
+.opcion-personaje input, .cargar-retrato input {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; padding: 0; cursor: pointer;
+}
+.opcion-personaje:focus-within, .cargar-retrato:focus-within { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.vista-personaje, .acciones-partida, #jugadores-sala li { display: flex; align-items: center; gap: .75rem; }
+.vista-personaje { margin: 1rem 0; }
+.vista-personaje strong { font-size: 1.15rem; }
+.acciones-partida { flex-wrap: wrap; }
+.cargar-retrato { position: relative; display: inline-flex; align-items: center; min-height: 44px; border-radius: .45rem; padding: .6rem .85rem; font-weight: 600; cursor: pointer; }
+#jugadores-sala li { justify-content: flex-start; }
+#jugadores-sala img { width: 40px; height: 40px; object-fit: contain; border-radius: .35rem; }
+#configuracion-sala { margin-bottom: 1rem; }
+.cabecera-arena { display: flex; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; flex-wrap: wrap; margin: .6rem 0; }
+#partida .cabecera-arena h3 { color: #66e8c8; margin: 0; }
+#reloj-arena { color: #e1ebf3; font-variant-numeric: tabular-nums; }
+#musica-movil { margin-block: .7rem .3rem; }
+#marcador-partida img { width: 2rem; height: 2rem; object-fit: contain; }
+#marcador-partida li { flex-wrap: nowrap; }
+#marcador-partida strong { flex: 1; min-width: 0; }
+#marcador-partida span { white-space: nowrap; }
+#form-configuracion { margin-block: .75rem; }
+#form-configuracion select {
+  width: 100%; min-height: 44px; padding: .6rem .85rem; border: 1px solid #6b7280;
+  border-radius: .45rem; background: #111827; color: inherit; font: inherit;
+}
+#form-configuracion input { width: 100%; color: inherit; }
+#controles-arena { margin: .7rem 0; border: 1px solid #52657b; }
+#partida #iniciar-partida, #partida #abandonar-sala { margin-top: .65rem; }
+@media (max-width: 32rem) {
+  #opciones-avatar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .acciones-partida > * { justify-content: center; flex: 1 1 7rem; }
+}

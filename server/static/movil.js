@@ -1,4 +1,9 @@
 import { iniciarAccesoMovil } from "./acceso.js";
+import { catalogo, prepararSeleccion, retratoPersonalizado } from "./movil-avatares.js";
+import { prepararConfiguracion } from "./movil-configuracion.js";
+import { crearRenderArena } from "./movil-arena.js";
+import { prepararMusica } from "./movil-audio.js";
+import { mostrarResultados } from "./movil-resultados.js";
 
 const cuenta = document.querySelector("#cuenta");
 const estadoRanking = document.querySelector("#estado-ranking");
@@ -24,6 +29,7 @@ async function cargarPerfil(usuario, accesoGoogle = false) {
   try {
     return (await pedir("/api/profile", { headers: cabeceras })).user;
   } catch (error) {
+    // El 404 indica el primer ingreso. Con Google enviamos {} para que el servidor nombre el perfil a partir del token.
     if (error.estado !== 404) throw error;
     const nombre = (usuario.displayName || usuario.email.split("@")[0]).replaceAll("@", "").trim();
     return (await pedir("/api/profile", {
@@ -103,8 +109,31 @@ iniciarAccesoMovil({
     jugadorActivo = user;
     cuenta.hidden = false;
     cargarRanking();
+    seleccion.cargar(user, pedir, () => user === jugadorActivo);
     cargarEstadoPartida();
     temporizadorPartida = setInterval(cargarEstadoPartida, 2000);
+  },
+  async salirDePartida() {
+    const jugador = jugadorActivo;
+    cerrandoSesion = true;
+    actualizarBotones();
+    try {
+      // Si se pulsó Continuar justo antes de salir, esperamos a que el servidor confirme la plaza.
+      await cambioEnCurso;
+      if (!jugador) return true;
+      const headers = { Authorization: `Bearer ${await jugador.getIdToken()}` };
+      const actual = await pedir("/api/game/state", { headers, signal: AbortSignal.timeout(5000) });
+      const pertenece = actual.game
+        ? actual.game.players.some(j => j.user_id === actual.jugador_actual_id && j.connected)
+        : actual.partida.jugadores.some(j => j.id_usuario === actual.jugador_actual_id);
+      if (pertenece) await pedir("/api/game/leave", { method: "POST", headers, signal: AbortSignal.timeout(5000) });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      cerrandoSesion = false;
+      actualizarBotones();
+    }
   },
   cerrarCuenta() {
     jugadorActivo = undefined;
@@ -145,47 +174,60 @@ async function actualizarPerfilMovil() {
 }
 actualizarPerfil.addEventListener("click", actualizarPerfilMovil);
 
-async function cargarEstadoPartida() {
+let consultaActual, datosPartida;
+let operacionSala = false, cerrandoSesion = false, cambioEnCurso;
+let partidaSeguida, resultadoVisible;
+const retratosPersonales = new Map();
+const arena = crearRenderArena(document.querySelector("#arena-movil"), jugador =>
+  catalogo.get(jugador.avatar_id)?.personaje || retratosPersonales.get(jugador.user_id));
+const musica = prepararMusica(document.querySelector("#musica-movil"));
+const nombresEscenarios = JSON.parse(document.querySelector("#nombres-escenarios").textContent);
+const seleccion = prepararSeleccion(actualizarBotones);
+const editorConfiguracion = prepararConfiguracion({
+  pedir, jugadorActual: () => jugadorActivo, actualizar: () => cargarEstadoPartida(true),
+});
+
+async function cargarEstadoPartida(forzar = false) {
   const jugador = jugadorActivo;
   const estado = document.querySelector("#estado-partida");
 
   const boton = document.querySelector("#actualizar-partida");
-  if (!jugador || !estado || boton.disabled) return;
+  if (!jugador || operacionSala || (consultaActual && !forzar)) return;
+  const consulta = Symbol();
+  consultaActual = consulta;
   boton.disabled = true;
 
   try {
     const token = await jugador.getIdToken();
     // US30 consulta el estado compartido de US13. «partida» incluye la sala
     // de espera y «game» contiene la arena cuando hay una partida en curso o finalizada.
-    const { game, mapa, partida } = await pedir("/api/game/state", {
+    const ruta = partidaSeguida ? "/api/game/state?resultado_de=" + encodeURIComponent(partidaSeguida) : "/api/game/state";
+    const datos = await pedir(ruta, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (jugador !== jugadorActivo) return;
-
-    const jugadores = game?.players ?? [];
-    // US25 publica el ganador en winner_id. Al conectar el podio de US26, usar
-    // sus posiciones finales también aquí para que ambos clientes coincidan en los empates.
-    const ganador = game?.status === "finished"
-      ? jugadores.find(jugador => jugador.player_id === game.winner_id)
-      : undefined;
-
-    const enSala = partida?.jugadores ?? [];
-    const mensajes = [game?.message ?? `Sala de espera: ${enSala.length} de 3 jugadores.`];
-    if (ganador) mensajes[0] = `Partida finalizada. Ganador: ${ganador.username}.`;
-    for (const evento of game?.eventos ?? []) mensajes.push(evento.mensaje);
+    if (jugador !== jugadorActivo || consultaActual !== consulta) return;
+    datosPartida = datos;
+    const { game, mapa, partida, jugador_actual_id, avatares_sala } = datos;
+    const { dentro, sala, jugando } = participacion();
+    // Una nueva sala puede abrirse entre dos consultas. El participante conserva su podio hasta pulsar Volver.
+    const final = datos.resultado_anterior || (dentro && game?.status === "finished" ? game : null);
+    resultadoVisible = mostrarResultados(final, retratoJugador) ? final : null;
+    partidaSeguida = resultadoVisible?.match_id || (dentro ? game?.match_id : null);
+    mostrarSala(partida, game, jugador_actual_id, avatares_sala);
+    const juegoVisible = document.querySelector("#juego-activo").hidden ? null : game;
+    const mensajes = juegoVisible ? [juegoVisible.message, ...(juegoVisible.eventos || []).map(e => e.mensaje)] : [];
+    if (sala && !resultadoVisible) {
+      mensajes.push(partida.jugadores.length < 2 ? "Esperando a otro jugador…" : "La sala está lista para iniciar.");
+    }
     estado.textContent = mensajes.join(" ");
-    const marcador = document.querySelector("#marcador-partida");
-    const fichas = jugadores.map((jugador, indice) => ({ jugador, numero: indice + 1 }));
-    if (ganador) fichas.sort((a, b) => b.jugador.score - a.jugador.score);
-    const filas = game
-      ? fichas.map(({ jugador, numero }) => fila(`Ficha ${numero} · ${jugador.username}`, `${jugador.score} puntos`))
-      : enSala.map(jugador => fila(jugador.nombre_usuario, "En la sala"));
-    marcador.replaceChildren(...filas);
-    dibujarArena(mapa, jugadores, game);
-    mostrarEstadoReactor(game);
-    if (game?.status === "finished" && game.match_id !== ultimoResultadoVisto) {
-      ultimoResultadoVisto = game.match_id;
+    if (resultadoVisible) avisoSala.textContent = "";
+    musica.sincronizar(resultadoVisible ? "resultados" : jugando ? "arena" : null);
+    const tema = arena.dibujar(mapa, juegoVisible, partida.configuracion, jugador_actual_id);
+    if (juegoVisible) mostrarIndicadores(juegoVisible, tema || mapa.nombre, jugador_actual_id);
+    mostrarEstadoReactor(juegoVisible);
+    if (resultadoVisible && resultadoVisible.match_id !== ultimoResultadoVisto) {
+      ultimoResultadoVisto = resultadoVisible.match_id;
       resultadoPendiente = true;
     }
     if (resultadoPendiente) {
@@ -195,85 +237,134 @@ async function cargarEstadoPartida() {
       if (jugador === jugadorActivo) resultadoPendiente = !(perfilListo && rankingListo);
     }
   } catch {
-    if (jugador === jugadorActivo) {
+    if (jugador === jugadorActivo && consultaActual === consulta) {
       estado.textContent = "No se pudo consultar la partida.";
     }
   } finally {
-    if (jugador === jugadorActivo) boton.disabled = false;
+    if (consultaActual === consulta) { consultaActual = null; boton.disabled = false; }
   }
 }
-document.querySelector("#actualizar-partida").addEventListener("click", cargarEstadoPartida);
+document.querySelector("#actualizar-partida").addEventListener("click", () => cargarEstadoPartida());
 
-function dibujarArena(mapa, jugadores, juego) {
-  const canvas = document.querySelector("#arena-movil");
-  if (!mapa || !juego) {
-    canvas.hidden = true;
-    return;
-  }
+function retratoJugador(jugador) {
+  return catalogo.get(jugador.avatar_id)?.retrato || retratosPersonales.get(jugador.user_id);
+}
 
-  const lado = 24;
-  const ancho = mapa.columnas * lado;
-  const alto = mapa.filas * lado;
-  if (canvas.width !== ancho) canvas.width = ancho;
-  if (canvas.height !== alto) canvas.height = alto;
+function mostrarIndicadores(juego, tema, idPropio) {
+  document.querySelector("#titulo-arena").textContent = tema || "Arena";
+  const restante = juego.remaining_seconds != null;
+  const segundos = Math.floor(Math.max(0, (restante ? juego.remaining_seconds : juego.elapsed_seconds) || 0));
+  const reloj = [Math.floor(segundos / 60), segundos % 60].map(n => String(n).padStart(2, "0")).join(":");
+  const etiqueta = juego.status === "overtime" ? "Prórroga" : restante ? "Tiempo restante" : "Tiempo transcurrido";
+  document.querySelector("#reloj-arena").textContent = etiqueta + " · " + reloj;
+  const marcador = document.querySelector("#marcador-partida");
+  marcador.replaceChildren(...juego.players.map(j => {
+    const item = fila(j.username + (j.user_id === idPropio ? " (tú)" : ""), j.score === 1 ? "1 punto" : j.score + " puntos");
+    const url = retratoJugador(j);
+    if (url) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = "";
+      item.prepend(img);
+    }
+    return item;
+  }));
+}
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, ancho, alto);
-
-  const colores = {
-    "#": "#64748b",
-    X: "#7c3aed",
-    R: "#f59e0b",
-  };
-
-  // Si US23 incorpora un símbolo de casilla nuevo, añadir aquí su color.
-  // Las posiciones de obstáculos (US20), guardianes (US21) y energía extra (US22) llegan en «game».
-  mapa.plano.forEach((fila, y) => {
-    Array.from(fila).forEach((casilla, x) => {
-      ctx.fillStyle = colores[casilla] ?? "#243247";
-      ctx.fillRect(x * lado, y * lado, lado - 1, lado - 1);
+function cargarRetratoPersonal(id, usuario) {
+  if (retratosPersonales.has(id)) return;
+  retratosPersonales.set(id, "");
+  (async () => {
+    const token = await usuario.getIdToken();
+    const { avatar } = await pedir("/api/game/avatar?id=" + encodeURIComponent(id), {
+      headers: { Authorization: `Bearer ${token}` },
     });
+    if (usuario !== jugadorActivo || avatar?.tipo !== "personalizado") return;
+    const url = retratoPersonalizado(avatar.valor);
+    if (!url) return;
+    retratosPersonales.set(id, url);
+    for (const img of document.querySelectorAll("#jugadores-sala img[data-personal]")) {
+      if (img.dataset.personal === String(id)) { img.src = url; img.hidden = false; }
+    }
+    arena.repintar();
+    if (resultadoVisible) mostrarResultados(resultadoVisible, retratoJugador);
+  })().catch(() => { /* El nombre o el número identifica la ficha si falta su retrato. */ });
+}
+
+function participacion() {
+  if (!datosPartida) return {};
+  const { partida, game, jugador_actual_id } = datosPartida;
+  const enSala = partida.jugadores.some(j => j.id_usuario === jugador_actual_id);
+  const participante = game?.players.find(j => j.user_id === jugador_actual_id);
+  const dentro = game ? Boolean(participante?.connected) : enSala;
+  const enCurso = Boolean(game && game.status !== "finished");
+  return { dentro, sala: dentro && !game, jugando: dentro && enCurso,
+    reconectar: enCurso && participante?.connected === false, enCurso };
+}
+
+function actualizarBotones() {
+  const { dentro, sala, reconectar, enCurso } = participacion();
+  const bloqueo = !datosPartida || operacionSala || cerrandoSesion;
+  unirseSala.disabled = bloqueo || dentro || (enCurso ? !reconectar : !seleccion.eleccion());
+  unirseSala.textContent = reconectar ? "Volver a la partida" : "Continuar";
+  document.querySelector("#opciones-avatar").disabled = operacionSala || Boolean(enCurso);
+  document.querySelector("#archivo-avatar").disabled = operacionSala || Boolean(enCurso);
+  abandonarSala.disabled = bloqueo;
+  iniciarPartida.disabled = bloqueo || !sala || datosPartida.partida.jugadores.length < 2;
+}
+
+function mostrarSala(partida, game, idPropio, avatares) {
+  const { dentro, sala, jugando } = participacion();
+  document.querySelector("#seleccion-personaje").hidden = Boolean(dentro || resultadoVisible);
+  document.querySelector("#sala-espera").hidden = !sala || Boolean(resultadoVisible);
+  document.querySelector("#juego-activo").hidden = !game || game.status === "finished" || Boolean(resultadoVisible);
+  document.querySelector("#acciones-jugador").hidden = !jugando || Boolean(resultadoVisible);
+  abandonarSala.hidden = !dentro && !resultadoVisible;
+  editorConfiguracion.sincronizar(sala && !resultadoVisible ? partida : null, idPropio);
+  actualizarBotones();
+  const idsPersonales = new Set();
+  for (const j of partida.jugadores) {
+    if ((avatares?.[j.id_usuario] || "").startsWith("personalizado-")) {
+      idsPersonales.add(j.id_usuario);
+      cargarRetratoPersonal(j.id_usuario, jugadorActivo);
+    }
+  }
+  for (const j of (resultadoVisible || game)?.players ?? []) {
+    if (j.avatar_id?.startsWith("personalizado-")) {
+      idsPersonales.add(j.user_id);
+      cargarRetratoPersonal(j.user_id, jugadorActivo);
+    }
+  }
+  for (const [id, url] of retratosPersonales) {
+    if (!idsPersonales.has(id)) { retratosPersonales.delete(id); arena.olvidarImagen(url); }
+  }
+  if (!sala) return;
+  document.querySelector("#numero-jugadores").textContent = `Jugadores (${partida.jugadores.length}/3)`;
+  const filas = partida.jugadores.map(j => {
+    const retrato = document.createElement("img");
+    retrato.alt = "";
+    const id = avatares?.[j.id_usuario];
+    const url = catalogo.get(id)?.retrato || retratosPersonales.get(j.id_usuario);
+    if (url) retrato.src = url;
+    else retrato.hidden = true;
+    if (id?.startsWith("personalizado-")) retrato.dataset.personal = String(j.id_usuario);
+    const item = document.createElement("li");
+    item.append(retrato, j.nombre_usuario + (j.id_usuario === idPropio ? " (tú)" : ""));
+    return item;
   });
-
-  ctx.font = "bold 12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  function dibujarMarca(objeto, texto, color) {
-    const centroX = (objeto.x + 0.5) * lado;
-    const centroY = (objeto.y + 0.5) * lado;
-
-    ctx.beginPath();
-    ctx.arc(centroX, centroY, 9, 0, 2 * Math.PI);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.fillStyle = "#0f172a";
-    ctx.fillText(texto, centroX, centroY);
-  }
-
-  const obstaculos = juego?.obstaculos;
-  for (const puerta of obstaculos?.puertas ?? []) {
-    dibujarMarca(puerta, "P", puerta.abierta ? "#4ade80" : "#f87171");
-  }
-
-  const marcasTrampas = { jaula: "J", arenas_movedizas: "A", campo_electrico: "E" };
-  for (const trampa of obstaculos?.trampas ?? []) {
-    if (trampa.activa === false) continue;
-    dibujarMarca(trampa, marcasTrampas[trampa.tipo] ?? "!", "#fbbf24");
-  }
-
-  for (const guardian of juego?.guardianes ?? []) {
-    dibujarMarca(guardian, "G", "#fb7185");
-  }
-  if (juego.energia_adicional) dibujarMarca(juego.energia_adicional, "+", "#a3e635");
-
-  jugadores.forEach((jugador, indice) => {
-    if (jugador.connected === false) return;
-    dibujarMarca(jugador, String(indice + 1), "#38bdf8");
-  });
-
-  canvas.hidden = false;
+  document.querySelector("#jugadores-sala").replaceChildren(...filas);
+  const cfg = partida.configuracion;
+  const reglas = [
+    ["Fin de partida", cfg.modo_fin === "puntos" ? `${cfg.puntos_fin} puntos` : `${cfg.minutos_fin} minutos`],
+    ["Congelación", `${cfg.segundos_congelacion} s`],
+    ["Mapa", cfg.rotacion ? "Rotación de escenarios" : nombresEscenarios[cfg.escenario ?? 0]],
+  ];
+  document.querySelector("#configuracion-sala").replaceChildren(...reglas.map(([nombre, valor]) => {
+    const g = document.createElement("div"), dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = nombre; dd.textContent = valor;
+    g.append(dt, dd);
+    return g;
+  }));
 }
 
 const unirseSala = document.querySelector("#unirse-sala");
@@ -283,22 +374,34 @@ const avisoSala = document.querySelector("#aviso-sala");
 
 async function cambiarSala(accion) {
   const jugador = jugadorActivo;
-  if (!jugador || unirseSala.disabled) return;
-
-  unirseSala.disabled = true;
-  abandonarSala.disabled = true;
-  iniciarPartida.disabled = true;
+  const boton = {join: unirseSala, leave: abandonarSala, start: iniciarPartida}[accion];
+  if (!jugador || operacionSala || boton.disabled) return;
+  operacionSala = true;
+  consultaActual = null;
+  actualizarBotones();
+  avisoSala.textContent = "";
 
   try {
     const token = await jugador.getIdToken();
     if (jugador !== jugadorActivo) return;
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    if (accion === "join" && !participacion().reconectar) {
+      // Continuar guarda la misma elección que Pygame antes de ocupar una plaza en la sala.
+      const avatar = seleccion.eleccion();
+      if (!avatar) throw new Error("Selecciona un avatar para continuar.");
+      await seleccion.guardar(avatar, headers, pedir, () => jugador === jugadorActivo);
+      if (jugador !== jugadorActivo) return;
+    }
     // La API de sala (US09) valida quién puede iniciar la partida y US30 consulta el resultado.
-    await pedir(`/api/game/${accion}`, {
+    const partidaAlSalir = accion === "leave" ? partidaSeguida : null;
+    const ruta = "/api/game/" + accion + (partidaAlSalir ? "?partida=" + encodeURIComponent(partidaAlSalir) : "");
+    await pedir(ruta, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers,
     });
 
     if (jugador !== jugadorActivo) return;
+    if (accion === "leave") partidaSeguida = null;
     const mensajes = {
       join: "Ya estás en la sala.",
       leave: "Saliste de la sala.",
@@ -306,24 +409,22 @@ async function cambiarSala(accion) {
     };
 
     avisoSala.textContent = mensajes[accion];
-    cargarEstadoPartida();
-
   } catch (error) {
     if (jugador === jugadorActivo) {
       avisoSala.textContent = error.message || "No se pudo actualizar la sala.";
     }
   } finally {
     if (jugador === jugadorActivo) {
-      unirseSala.disabled = false;
-      abandonarSala.disabled = false;
-      iniciarPartida.disabled = false;
+      operacionSala = false;
+      await cargarEstadoPartida(true);
+      actualizarBotones();
     }
   }
 }
 
-unirseSala.addEventListener("click", () => cambiarSala("join"));
-abandonarSala.addEventListener("click", () => cambiarSala("leave"));
-iniciarPartida.addEventListener("click", () => cambiarSala("start"));
+for (const [boton, accion] of [[unirseSala, "join"], [abandonarSala, "leave"], [iniciarPartida, "start"]]) {
+  boton.addEventListener("click", () => { cambioEnCurso = cambiarSala(accion); });
+}
 
 const controlesArena = document.querySelector("#controles-arena");
 const avisoMovimiento = document.querySelector("#aviso-movimiento");
@@ -336,6 +437,7 @@ async function moverJugador(direccion) {
   try {
     const token = await jugador.getIdToken();
     if (jugador !== jugadorActivo) return;
+    // El móvil envía la dirección. El servidor comprueba las colisiones y el mapa se redibuja con la posición confirmada.
     const resultado = await pedir("/api/game/move", {
       method: "POST",
       headers: {
@@ -374,6 +476,7 @@ async function cambiarExtraccion(accion) {
   const jugador = jugadorActivo;
   if (!jugador || extraerEnergia.disabled) return;
 
+  // US18 usa el mismo event_id para reconocer un inicio repetido y para cancelar esa extracción concreta.
   const intento = accion === "start"
     ? { jugador, id: crypto.getRandomValues(new Uint32Array(4)).join("-") }
     : extraccion;
@@ -434,49 +537,25 @@ function mostrarEstadoReactor(juego) {
   if (estado.textContent !== mensaje) estado.textContent = mensaje;
 }
 
-const selectorAvatar = document.querySelector("#avatar-partida");
-const guardarAvatar = document.querySelector("#guardar-avatar");
-const avisoAvatar = document.querySelector("#aviso-avatar");
-
-guardarAvatar.addEventListener("click", async () => {
-  const jugador = jugadorActivo;
-  const valor = selectorAvatar.value;
-  if (!jugador) return;
-  if (!valor) {
-    avisoAvatar.textContent = "Elige un avatar primero.";
-    return;
-  }
-
-  guardarAvatar.disabled = true;
-  avisoAvatar.textContent = "Guardando avatar...";
-  try {
-    const token = await jugador.getIdToken();
-    if (jugador !== jugadorActivo) return;
-    await pedir("/api/game/avatar", {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ tipo: "predeterminado", valor }),
-    });
-    if (jugador === jugadorActivo) avisoAvatar.textContent = "Avatar guardado.";
-  } catch (error) {
-    if (jugador === jugadorActivo) avisoAvatar.textContent = error.message;
-  } finally {
-    if (jugador === jugadorActivo) guardarAvatar.disabled = false;
-  }
-});
-
 function limpiarPartidaMovil() {
   ultimoResultadoVisto = undefined;
   resultadoPendiente = false;
   extraccion = undefined;
-  selectorAvatar.value = "";
+  consultaActual = datosPartida = null;
+  operacionSala = false;
+  partidaSeguida = resultadoVisible = null;
+  mostrarResultados(null);
+  musica.sincronizar(null);
+  arena.dibujar(null);
+  editorConfiguracion.sincronizar(null, null);
+  for (const url of retratosPersonales.values()) arena.olvidarImagen(url);
+  retratosPersonales.clear();
+  document.querySelector("#seleccion-personaje").hidden = false;
+  document.querySelector("#sala-espera").hidden = true;
+  document.querySelector("#juego-activo").hidden = true;
+  abandonarSala.hidden = true;
+  document.querySelector("#jugadores-sala").replaceChildren();
   document.querySelector("#marcador-partida").replaceChildren();
-  const canvas = document.querySelector("#arena-movil");
-  canvas.hidden = true;
-  canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
   document.querySelectorAll("#partida [role=status], #estado-ranking, #estado-historial").forEach(elemento => {
     elemento.textContent = "";
   });
@@ -484,4 +563,5 @@ function limpiarPartidaMovil() {
     control.disabled = false;
   });
   cancelarExtraccion.disabled = true;
+  seleccion.limpiar();
 }

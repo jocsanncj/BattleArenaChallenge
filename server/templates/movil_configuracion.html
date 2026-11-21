@@ -1,0 +1,34 @@
+<div id="opciones-configuracion" hidden>
+    <button type="button" id="editar-configuracion" class="secundario"
+            aria-expanded="false" aria-controls="form-configuracion">Configuración</button>
+    <form id="form-configuracion" hidden>
+        <label for="cfg-modo">Fin de partida</label>
+        <select id="cfg-modo" name="modo_fin">
+            <option value="tiempo">Por tiempo</option>
+            <option value="puntos">Por puntos</option>
+        </select>
+        <div id="cfg-limite-tiempo">
+            <label for="cfg-minutos">Duración en minutos</label>
+            <input id="cfg-minutos" name="minutos_fin" type="number" inputmode="numeric" min="1" max="60" required>
+        </div>
+        <div id="cfg-limite-puntos">
+            <label for="cfg-puntos">Puntos para ganar</label>
+            <input id="cfg-puntos" name="puntos_fin" type="number" inputmode="numeric" min="1" max="10000" required>
+        </div>
+        <label for="cfg-congelacion">Segundos de congelación</label>
+        <input id="cfg-congelacion" name="segundos_congelacion" type="number"
+               inputmode="numeric" min="1" max="30" required>
+        <label for="cfg-escenario">Escenario</label>
+        <select id="cfg-escenario" name="escenario">
+            {% for nombre in escenarios %}
+            <option value="{{ loop.index0 }}">{{ nombre }}</option>
+            {% endfor %}
+            <option value="aleatorio">Mapa aleatorio al iniciar</option>
+        </select>
+        <div>
+            <button type="submit" id="guardar-configuracion">Guardar configuración</button>
+            <button type="button" id="cancelar-configuracion" class="secundario">Cancelar</button>
+        </div>
+    </form>
+    <p id="aviso-configuracion" role="status"></p>
+</div>

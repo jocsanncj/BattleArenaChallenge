@@ -121,6 +121,8 @@ def abrir_login_google() -> IntentoGoogle | None:
         Thread(target=_servidor.serve_forever, daemon=True).start()
     intento = IntentoGoogle()
     _intento_actual = intento
+    # La clave viaja después de «#» para que el navegador abra la página sin enviarla en el GET.
+    # Al comunicar el resultado, la página devuelve la clave en la cabecera X-Intento.
     url = f"http://localhost:{_servidor.server_port}/login/google#{intento.clave}"
     if webbrowser.open_new_tab(url):
         return intento

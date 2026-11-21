@@ -13,6 +13,11 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY backend /app/backend
 COPY server /app/server
 COPY shared /app/shared
+COPY Media/escenarios.json /app/Media/escenarios.json
+COPY Media/retratos/ /app/Media/retratos/
+COPY Media/personajes/ /app/Media/personajes/
+COPY Media/guardianes/ /app/Media/guardianes/
+COPY Media/Orbital.wav /app/Media/Orbital.wav
 
 EXPOSE 8000
 VOLUME ["/data"]

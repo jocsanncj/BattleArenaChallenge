@@ -12,18 +12,22 @@ from firebase_admin import auth, credentials
 from firebase_admin.exceptions import FirebaseError
 from flask import Flask, jsonify, request
 from backend.repository import (DuplicateEmail, DuplicateUsername, RepositoryError,SQLiteRepository, UserNotFound)
-from shared.domain import ARENA_PREDETERMINADA
+from random import randrange
+from shared.domain.avatares import NOMBRES_PERSONAJES
+from shared.escenarios import MAPAS
 from shared.identidad import nombre_jugador_google
 from shared.game.arena import MultiplayerArena
-from shared.game.rules import GameRules
+from shared.game.rules import GameRules, podio_final
 from shared.game.obstacles import GestorObstaculos
 from shared.game.guardians import GestorGuardianes
 from shared.game.events import GestorEventosPartida
 from server.movil import movil
+from server.arte_movil import arte_movil
 
 load_dotenv()
 app = Flask(__name__)
 app.register_blueprint(movil)
+app.register_blueprint(arte_movil)
 
 
 class ForbiddenOperation(PermissionError):
@@ -137,6 +141,7 @@ def guardar_perfil(claims):
         nombre = formulario.get("name")
     if not isinstance(nombre, str) or not nombre.strip() or len(nombre) > 40:
         raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
+    # El UID vincula este perfil con sus partidas. Si ya existe, el repositorio conserva su nombre de jugador.
     repo.crear(claims["uid"], nombre.strip(), claims["email"])
     return {"user": repo.obtener(claims["uid"], claims["email_verified"]).to_dict()}
 
@@ -147,12 +152,14 @@ def obtener_ranking():
 # CAMBIO ONLINE: estado compartido de juego en el volumen Docker (/data).
 _GAME_FILE = datos / "partida_online.json"
 _GAME_LOCK = threading.RLock()
+_MAPA_ACTIVO = MAPAS[0]
 _GAME_ARENA = None
 _GAME_OBSTACULOS = None
 _GAME_GUARDIANES = None
 _GAME_EVENTOS = None
 _GAME_USERS = {}
 _GAME_PLAYER_IDS = {}
+_RESULTADOS_RECIENTES = {}
 _MOVE_TIMES = {}
 _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
 
@@ -226,7 +233,7 @@ def _actualizar_reactor(estado, ahora):
         or jugador is None
         or not jugador.get("connected")
         or estado_temporal.get("estado") in {"congelado", "inmovilizado"}
-        or not ARENA_PREDETERMINADA.junto_al_reactor(
+        or not _MAPA_ACTIVO.junto_al_reactor(
             int(jugador["x"]), int(jugador["y"])
         )
     ):
@@ -261,6 +268,9 @@ def _persistir_resultado_partida(estado):
         return
     if _GAME_EVENTOS is not None:
         _GAME_EVENTOS.finalizar()
+    match_id = estado["match_id"]
+    if match_id in _RESULTADOS_RECIENTES:
+        return _RESULTADOS_RECIENTES[match_id][1]
     participantes = []
     for jugador in estado.get("players", []):
         player_id = jugador["player_id"]
@@ -280,11 +290,25 @@ def _persistir_resultado_partida(estado):
     marcas = repo.obtener_marcas_partida(estado["match_id"])
     if len(marcas) != len(participantes):
         raise RuntimeError("No se consolidaron los resultados de todos los participantes.")
+    jugadores = []
     for jugador in estado["players"]:
-        uid = _GAME_FIREBASE_UIDS[jugador["player_id"]]
-        jugador.update(marcas[uid])
-    estado["duration_seconds"] = int(estado.get("elapsed_seconds", 0))
-    estado["results_persisted"] = True
+        player_id = jugador["player_id"]
+        uid = _GAME_FIREBASE_UIDS[player_id]
+        jugadores.append({
+            "player_id": player_id, "user_id": _GAME_PLAYER_IDS[player_id],
+            "username": jugador["username"], "avatar_id": jugador["avatar_id"],
+            "score": jugador["score"], **marcas[uid],
+        })
+    resultado = {
+        "match_id": match_id, "status": "finished", "winner_id": estado["winner_id"],
+        "scores": estado["scores"].copy(), "players": podio_final(jugadores),
+        "duration_seconds": int(estado["elapsed_seconds"]), "results_persisted": True,
+    }
+    # El podio sigue disponible si escritorio ya abrió la siguiente sala entre dos sondeos del móvil.
+    _RESULTADOS_RECIENTES[match_id] = (frozenset(marcas), resultado)
+    if len(_RESULTADOS_RECIENTES) > 32:
+        del _RESULTADOS_RECIENTES[next(iter(_RESULTADOS_RECIENTES))]
+    return resultado
 
 def _estado_arena():
     if _GAME_ARENA is None:
@@ -345,7 +369,15 @@ def _estado_arena():
     if _GAME_EVENTOS is not None:
         estado.update(_GAME_EVENTOS.estado_publico(ahora))
     estado["reactor"] = _estado_reactor(ahora)
-    _persistir_resultado_partida(estado)
+    resultado = _persistir_resultado_partida(estado)
+    if resultado:
+        estado["results_persisted"] = True
+        estado["duration_seconds"] = resultado["duration_seconds"]
+        podio = {j["player_id"]: j for j in resultado["players"]}
+        conectados = _GAME_ARENA.connected_player_ids()
+        for jugador in estado["players"]:
+            jugador.update(podio[jugador["player_id"]])
+            jugador["connected"] = jugador["player_id"] in conectados
     jugadores = []
     for jugador in estado.get("players", []):
         jugador["user_id"] = _GAME_PLAYER_IDS[jugador["player_id"]]
@@ -354,6 +386,14 @@ def _estado_arena():
     if estado.get("winner_id") is not None:
         estado["winner_user_id"] = _GAME_PLAYER_IDS.get(estado["winner_id"])
     return estado
+
+def _avatar_en_partida(avatares, id_usuario):
+    eleccion = avatares.get(str(id_usuario)) or {}
+    if eleccion.get("tipo") == "personalizado":
+        return f"personalizado-{id_usuario}"
+    avatar_id = eleccion.get("valor")
+    return avatar_id if avatar_id in NOMBRES_PERSONAJES else "avatar_1"
+
 
 def _iniciar_arena(partida):
     global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_GUARDIANES, _GAME_EVENTOS, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
@@ -364,6 +404,10 @@ def _iniciar_arena(partida):
     modo = configuracion.get("modo_fin")
     if modo not in {"tiempo", "puntos"}:
         raise ValueError("El modo de finalización de la partida no es válido.")
+    global _MAPA_ACTIVO
+    if configuracion.get("rotacion", False):
+        configuracion["escenario"] = randrange(len(MAPAS))
+    _MAPA_ACTIVO = MAPAS[configuracion.get("escenario", 0)]
     reglas = GameRules(
         mode="time" if modo == "tiempo" else "points",
         duration_seconds=int(configuracion.get("minutos_fin", 5)) * 60,
@@ -372,25 +416,22 @@ def _iniciar_arena(partida):
     arena = MultiplayerArena(lambda _estado: None, rules=reglas)
     _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES = {}, {}, {}
     _GAME_OBSTACULOS = GestorObstaculos(
-        ARENA_PREDETERMINADA, ARENA_PREDETERMINADA.puntos_inicio()[:len(jugadores)],
+        _MAPA_ACTIVO, _MAPA_ACTIVO.puntos_inicio()[:len(jugadores)],
         segundos_inmovilizacion=configuracion.get("segundos_congelacion", 3),
     )
     _GAME_GUARDIANES = GestorGuardianes(
-        ARENA_PREDETERMINADA, _GAME_OBSTACULOS,
+        _MAPA_ACTIVO, _GAME_OBSTACULOS,
         segundos_congelacion=configuracion.get("segundos_congelacion", 3),
     )
     _GAME_EVENTOS = GestorEventosPartida(
-        ARENA_PREDETERMINADA, _GAME_OBSTACULOS, _GAME_GUARDIANES
+        _MAPA_ACTIVO, _GAME_OBSTACULOS, _GAME_GUARDIANES
     )
     _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
-    posiciones = ARENA_PREDETERMINADA.puntos_inicio()[:3]
+    posiciones = _MAPA_ACTIVO.puntos_inicio()[:3]
     estado = _leer_estado_juego()
     for indice, jugador in enumerate(jugadores):
         user_id = str(jugador["id_usuario"])
-        eleccion = estado["avatares"].get(user_id) or {}
-        avatar_id = eleccion.get("valor", "avatar_1")
-        if eleccion.get("tipo") == "personalizado":
-            avatar_id = f"personalizado-{user_id}"
+        avatar_id = _avatar_en_partida(estado["avatares"], user_id)
         player_id = user_id
         _GAME_USERS[user_id] = player_id
         _GAME_PLAYER_IDS[player_id] = int(user_id)
@@ -447,7 +488,7 @@ def interactuar_con_reactor(claims):
         clave_evento = (player_id, event_id)
         if clave_evento in _REACTOR["events"]:
             return {"ok": True, "duplicate": True, "state": estado}
-        if not ARENA_PREDETERMINADA.junto_al_reactor(int(jugador["x"]), int(jugador["y"])):
+        if not _MAPA_ACTIVO.junto_al_reactor(int(jugador["x"]), int(jugador["y"])):
             raise ValueError("Acércate a una casilla junto al reactor.")
         if _REACTOR["active"] is not None:
             raise ValueError("Otro jugador está extrayendo energía del reactor.")
@@ -495,25 +536,20 @@ def guardar_avatar_juego(claims):
         _guardar_estado_juego(estado)
     return {"ok": True}
 
-# Al integrar US23, generar el plano a partir del escenario elegido para la partida.
+# US23 define los escenarios. /api/game/state devuelve al móvil el plano seleccionado en la configuración.
 # El móvil (US30) lee plano[y][x] para situar jugadores y obstáculos en las mismas casillas.
-_MAPA_ARENA = {
-    "columnas": ARENA_PREDETERMINADA.columnas,
-    "filas": ARENA_PREDETERMINADA.filas,
-    "plano": [
-        "".join(
-            ARENA_PREDETERMINADA.casilla_en(x, y).value
-            for x in range(ARENA_PREDETERMINADA.columnas)
-        )
-        for y in range(ARENA_PREDETERMINADA.filas)
-    ],
-}
+_PLANOS = [
+    {"columnas": m.columnas, "filas": m.filas, "plano": [
+        "".join(m.casilla_en(x, y).value for x in range(m.columnas))
+        for y in range(m.filas)]}
+    for m in MAPAS
+]
 
 @app.get("/api/game/state")
 @requiere_sesion
 def leer_partida_juego(claims):
     """Devuelve la sala y el estado de juego producido por el servidor."""
-    _validar_jugador(claims)
+    id_usuario, _, _ = _validar_jugador(claims)
     with _GAME_LOCK:
         estado_guardado = _leer_estado_juego()
         partida = estado_guardado["partida"]
@@ -522,7 +558,25 @@ def leer_partida_juego(claims):
             estado_guardado["partida"] = partida
             _guardar_estado_juego(estado_guardado)
         juego = _estado_arena()
-        return {"partida": partida, "game": juego, "mapa": _MAPA_ARENA}
+        # Los clientes de escritorio reconstruyen Jugador con sus tres campos originales.
+        # El móvil recibe aparte los IDs de avatar, sin descargar los PNG personalizados al sondear la sala.
+        avatares_sala = {
+            str(j["id_usuario"]): _avatar_en_partida(estado_guardado["avatares"], j["id_usuario"])
+            for j in partida["jugadores"]
+        }
+        respuesta = {
+            "partida": partida,
+            "game": juego,
+            "mapa": _PLANOS[partida["configuracion"].get("escenario", 0)],
+            "jugador_actual_id": id_usuario,
+            "avatares_sala": avatares_sala,
+        }
+        anterior = request.args.get("resultado_de")
+        if anterior and (juego is None or anterior != juego["match_id"]):
+            guardado = _RESULTADOS_RECIENTES.get(anterior)
+            if guardado and claims["uid"] in guardado[0]:
+                respuesta["resultado_anterior"] = guardado[1]
+        return respuesta
 
 @app.post("/api/game/join")
 @requiere_sesion
@@ -583,6 +637,9 @@ def salir_partida_juego(claims):
     user_id, player_id, _ = _validar_jugador(claims)
     with _GAME_LOCK:
         global _GAME_ARENA
+        origen = request.args.get("partida")
+        if origen is not None and (_GAME_ARENA is None or _GAME_ARENA.match_id != origen):
+            return {"ok": True}
         estado = _leer_estado_juego()
         partida = estado["partida"]
         if _GAME_ARENA is not None:
@@ -591,8 +648,7 @@ def salir_partida_juego(claims):
                 _GAME_EVENTOS.pausar()
             snapshot = _GAME_ARENA.snapshot()
             _persistir_resultado_partida(snapshot)
-            jugadores = snapshot["players"]
-            if all(not jugador["connected"] for jugador in jugadores):
+            if not _GAME_ARENA.connected_player_ids():
                 _GAME_ARENA = None
                 estado["partida"] = _partida_vacia()
                 _guardar_estado_juego(estado)
@@ -612,6 +668,10 @@ def guardar_configuracion_juego(claims):
     if not isinstance(configuracion, dict):
         raise ValueError("La configuración de la partida no tiene un formato válido.")
     modo = configuracion.get("modo_fin")
+    indice = configuracion.get("escenario", 0)
+    rotacion = configuracion.get("rotacion", False)
+    if type(indice) is not int or indice not in range(len(MAPAS)) or type(rotacion) is not bool:
+        raise ValueError("Selección de escenario inválida.")
     minutos = configuracion.get("minutos_fin")
     puntos = configuracion.get("puntos_fin")
     congelacion = configuracion.get("segundos_congelacion")
@@ -631,7 +691,7 @@ def guardar_configuracion_juego(claims):
         if jugadores[0]["id_usuario"] != user_id:
             raise ForbiddenOperation("Solo el creador de la sala puede cambiar la configuración.")
         partida["configuracion"] = {
-            "modo_fin": modo,
+            "modo_fin": modo, "escenario": indice, "rotacion": rotacion,
             "minutos_fin": minutos,
             "puntos_fin": puntos,
             "segundos_congelacion": congelacion,
@@ -698,7 +758,7 @@ def mover_jugador_juego(claims):
             movimiento_valido, motivo = _GAME_OBSTACULOS.validar_movimiento(player_id, x, y, ahora)
             if not movimiento_valido:
                 return {"ok": False, "error": motivo, "state": _estado_arena()}
-        elif not ARENA_PREDETERMINADA.es_transitable(x, y):
+        elif not _MAPA_ACTIVO.es_transitable(x, y):
             return {"ok": False, "error": "No puedes atravesar esa barrera.", "state": _estado_arena()}
         if any(p["player_id"] != player_id and p["x"] == x and p["y"] == y
                for p in estado["players"]):

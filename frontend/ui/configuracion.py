@@ -71,7 +71,13 @@ class PantallaConfiguracion(Pantalla):
         setattr(self.cfg, campo, max(minimo, min(maximo, getattr(self.cfg, campo) + delta)))
 
     def _siguiente_mapa(self):
-        self.cfg.escenario = (self.cfg.escenario + 1) % len(MAPAS)
+        if not self.cfg.rotacion:
+            self.cfg.escenario = (self.cfg.escenario + 1) % len(MAPAS)
+
+        self.cfg.rotacion = False
+
+    def _aleatorio(self):
+        self.cfg.rotacion = True
 
     def _alternar_modo(self) -> None:
         """
@@ -97,7 +103,7 @@ class PantallaConfiguracion(Pantalla):
         """
         self.ctx.partida.actualizar_configuracion(self.cfg)
         confirmada = self.ctx.partida.obtener_partida().configuracion
-        if indice_mapa(confirmada) != self.cfg.escenario:
+        if indice_mapa(confirmada) != self.cfg.escenario or getattr(confirmada, "rotacion", False) != self.cfg.rotacion:
             self.mensaje = "Reglas guardadas. El servidor aún usa el mapa original."
         else:
             self.exito("Configuración guardada.")
@@ -121,7 +127,8 @@ class PantallaConfiguracion(Pantalla):
             Boton(pygame.Rect(540, 180, 40, 36), "+", lambda: self._cambiar(campo, paso, minimo, maximo)),
             Boton(pygame.Rect(420, 250, 40, 36), "-", lambda: self._cambiar("segundos_congelacion", -1, 1, 30)),
             Boton(pygame.Rect(540, 250, 40, 36), "+", lambda: self._cambiar("segundos_congelacion", 1, 1, 30)),
-            Boton(pygame.Rect(60, 298, 520, 38), f"Escenario inicial · {MAPAS[self.cfg.escenario].nombre}   ›", self._siguiente_mapa),
+            Boton(pygame.Rect(60, 298, 296, 38), f"Fijo · {MAPAS[self.cfg.escenario].nombre} ›", self._siguiente_mapa, GRIS if self.cfg.rotacion else EXITO),
+            Boton(pygame.Rect(366, 298, 214, 38), "Aleatorio · rotación", self._aleatorio, EXITO if self.cfg.rotacion else GRIS),
             Boton(pygame.Rect(60, 350, 200, 40), "Guardar", self._guardar, EXITO),
             Boton(pygame.Rect(280, 350, 200, 40), "Volver", lambda: "volver", GRIS)]
 

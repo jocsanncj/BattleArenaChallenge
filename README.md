@@ -1,6 +1,8 @@
 # Battle Arena Challenge
 
-Videojuego multijugador de escritorio hecho con Python y Pygame (CE-1105 Principios de Modelado en Ingeniería, TEC).
+Videojuego multijugador para computadora (Python y Pygame) y navegador móvil. Ambos clientes comparten la misma arena. Proyecto de CE-1105 Principios de Modelado en Ingeniería, TEC.
+
+[Jugar desde el celular](#jugar-desde-el-celular)
 
 **Estado actual:** registro e inicio de sesión con Firebase y partidas online para dos o tres jugadores. El servidor valida los movimientos y las extracciones del reactor, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP. Al consolidar el resultado, cada cliente abre una ceremonia con podio, duración, avatares y récords personales.
 
@@ -12,6 +14,7 @@ La documentación de arquitectura y los diagramas compatibles con Azure DevOps W
 
 ```text
 Jugador
+  ├─ Navegador móvil (/movil) ──► Firebase Authentication y la misma API Flask
   ├─ Teclado o gamepad opcional
   │    └─ Pygame/SDL (acciones.py) ──► Cliente Pygame
   └─ Cliente Pygame (frontend/)
@@ -28,7 +31,7 @@ Jugador
 - **Firebase Authentication** guarda las contraseñas y envía los correos de verificación y recuperación. Nuestro código nunca guarda contraseñas.
 - **El mando es opcional** y se conecta a la computadora del jugador, no al servidor. En la arena se puede alternar entre teclado y gamepad; el MSI FORCE GC30 V2 es el modelo de referencia y se leen la cruceta y la palanca izquierda.
 - **El servidor** corre en Docker y guarda lo propio del juego (nombre de usuario único, récord, historial, logros) en una base de datos **SQLite**.
-- **El cliente** (Pygame) se ejecuta directamente en tu computadora, sin Docker.
+- **El cliente de escritorio** se ejecuta con Pygame en la computadora. El servidor entrega el **cliente móvil** al navegador al abrir `/movil`.
 - Para la partida, el cliente envía acciones HTTP (unirse, iniciar o moverse); no puede enviar el puntaje ni reemplazar el estado completo. El servidor valida cada paso y los dos clientes consultan el mismo estado.
 
 Hay dos roles, y puedes cumplir los dos a la vez:
@@ -36,7 +39,7 @@ Hay dos roles, y puedes cumplir los dos a la vez:
 | Rol | Qué necesita |
 |---|---|
 | **Quien levanta el servidor** (una persona del equipo) | Docker, `.env` y `firebase-admin.json` |
-| **Quien ejecuta el juego** (todos) | Python, `.env` y la dirección del servidor |
+| **Quien juega** | En computadora, Python, `.env` y la dirección del servidor. En celular, un navegador y la dirección web del juego. |
 
 ---
 
@@ -70,7 +73,7 @@ BATTLE_ARENA_SERVER=http://127.0.0.1:8000
 
 Reemplaza `PEGA_AQUI_LA_CLAVE_ENTREGADA` por la API key que proporcionó el equipo de Firebase; no escribas el texto de ejemplo literalmente.
 
-Si el servidor corre en otra computadora, cambia `127.0.0.1` por la IPv4 local del servidor. La dirección debe iniciar con `http://`, no `https://`.
+Si el servidor corre en otra computadora, cambia `127.0.0.1` por su IPv4 local. El servidor Docker de esta guía usa `http://` y el puerto `8000`.
 
 ### `firebase-admin.json` (solo computadora servidor)
 
@@ -79,6 +82,8 @@ La persona que inicia Docker debe copiar el archivo `firebase-admin.json` a la c
 ---
 
 ## 4. Descargar el proyecto (una vez en cada computadora)
+
+Los comandos de descarga abren la rama `main`. Para probar la versión del equipo en `Develop`, ejecuta `git switch Develop` dentro de `BattleArenaChallenge` después de clonar. Si el cambio móvil aún está en revisión, usa la rama del pull request.
 
 ### Windows (PowerShell)
 
@@ -253,11 +258,21 @@ El correo y el nombre de usuario deben ser únicos.
 
 Para ver la información de la cuenta, selecciona **Ver perfil**. Para salir de la cuenta, elige **Cerrar sesión**.
 
+### Jugar desde el celular
+
+1. Inicia el servidor en una computadora siguiendo la sección 5. Conecta el celular al Wi-Fi de esa misma red. El juego se abre en el navegador del teléfono y usa la conexión a Internet para iniciar sesión con Firebase.
+2. Busca la IPv4 de la computadora como indica la sección 6. Si fuera `192.168.1.50`, abrirías `http://192.168.1.50:8000/movil` en el celular. Sustituye la IP por la de tu equipo. Si el servidor usa otro puerto, por ejemplo `8001`, usa ese puerto tanto en el celular como en el cliente de escritorio. En el teléfono, `localhost` apunta al propio teléfono.
+3. Toca **Iniciar sesión**, escribe tu usuario o correo y tu contraseña, y pulsa **Entrar**. Si es tu primera vez, usa **Crear cuenta** y verifica el correo. Para **Continuar con Google**, abre el juego desde la dirección que el equipo haya autorizado en Firebase. Si Google rechaza la IP local, también puedes entrar con una cuenta verificada que tenga contraseña.
+4. Toca **Jugar online**, elige un avatar y pulsa **Continuar**. Un segundo jugador puede entrar desde otra computadora o celular con su propia cuenta y un avatar distinto. Cuando **Sala de espera** muestre al menos dos jugadores, pulsa **Iniciar partida**. La sala admite hasta tres.
+5. En la arena, usa las flechas táctiles para moverte. Para puntuar, acércate al reactor, toca **Extraer energía** y permanece junto a él durante 1,5 segundos. Si la música está en silencio, toca **Activar música**. Al terminar verás el podio con los puntajes, la duración y los récords personales. Pulsa **Volver** para salir.
+
+Si la página no carga, prueba desde el celular la misma dirección cambiando `/movil` por `/health`. Debe aparecer `{"status":"ok"}`. Si tampoco abre, revisa la red, la IP, el puerto y el firewall según la sección 6.
+
 ---
 
 ## 8. Jugar con teclado o mando
 
-Para una partida online se necesitan al menos dos jugadores y se admiten hasta tres; cada uno usa una computadora conectada al mismo servidor.
+Una partida admite de dos a tres jugadores conectados al mismo servidor. Los siguientes controles corresponden al cliente de escritorio.
 
 1. En cada computadora, abre el juego e inicia sesión con una cuenta cuyo correo esté verificado.
 2. Selecciona **Jugar online** y elige un avatar.
@@ -314,7 +329,7 @@ Linux Mint:  .venv/bin/python -m unittest discover -s tests -v
 
 ## 11. Estructura del proyecto
 
-El código está agrupado por capa. El cliente vive en `frontend/`, la API en `server/`,
+El código está agrupado por capa. El cliente de escritorio vive en `frontend/`, el cliente móvil y la API en `server/`,
 la persistencia del perfil en `backend/` y las reglas/modelos compartidos en `shared/`.
 
 ```text
@@ -353,6 +368,7 @@ la persistencia del perfil en `backend/` y las reglas/modelos compartidos en `sh
 | `frontend/actions.py` | Lectura de controles del teclado y gamepad |
 | `Media/Efecto.mp3` | Sonido reproducido al pulsar el botón de acción del gamepad o la tecla `E` |
 | `server/app.py` | API Flask del juego y perfiles |
+| `server/movil.py`, `server/templates/` y `server/static/` | Ruta `/movil`, páginas y controles del navegador móvil |
 | `shared/domain/` | Reglas de avatar, mapa, configuración y sala |
 | `shared/game/` | Estado de arena, puntaje y reglas de partida |
 | `shared/data.py` | Modelos y almacenamiento JSON local |
@@ -365,7 +381,7 @@ la persistencia del perfil en `backend/` y las reglas/modelos compartidos en `sh
 
 Para agregar una pantalla, usa `frontend/ui/` o `frontend/account/`. Las reglas compartidas
 van en `shared/domain/` o `shared/game/`; los endpoints nuevos, en `server/app.py`; la
-persistencia del perfil, en `backend/`. El cliente se inicia con `python -m frontend`.
+persistencia del perfil, en `backend/`. El cliente de escritorio se inicia con `python -m frontend` y el móvil se abre en `/movil`.
 
 ---
 
