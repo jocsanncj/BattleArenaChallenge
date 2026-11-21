@@ -25,7 +25,7 @@ function mensajeError(error) {
 
 // US30 reúne en el móvil el registro y la verificación (US01–02), el acceso
 // con usuario o correo (US03), la recuperación (US05) y Google (US29).
-export function iniciarAccesoMovil({ pedir, abrirCuenta, cerrarCuenta }) {
+export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarCuenta }) {
   const elemento = id => document.getElementById(id);
   const panel = elemento("autenticacion");
   const estado = elemento("estado-acceso");
@@ -61,6 +61,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, cerrarCuenta }) {
       const [appSdk, authSdk] = await carga;
       sdk = authSdk;
       auth = sdk.initializeAuth(appSdk.initializeApp(config), {
+        // La sesión dura mientras la página siga abierta. Al recargar, el jugador vuelve a identificarse.
         persistence: sdk.inMemoryPersistence,
         popupRedirectResolver: sdk.browserPopupRedirectResolver,
       });
@@ -147,6 +148,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, cerrarCuenta }) {
     try {
       await abrirCuenta(usuario, google);
     } catch (error) {
+      // Si la API del juego rechaza el perfil, cerramos también la sesión que Firebase acaba de abrir.
       await sdk.signOut(auth);
       throw error;
     }
@@ -258,6 +260,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, cerrarCuenta }) {
   });
 
   salir.addEventListener("click", () => ejecutar(async () => {
+    const salaLiberada = await salirDePartida();
     await sdk.signOut(auth);
     cerrarCuenta();
     intentos = 0;
@@ -266,7 +269,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, cerrarCuenta }) {
     elemento("estado-cuenta").textContent = "";
     panel.hidden = false;
     salir.hidden = true;
-    mostrar("bienvenida", "Sesión cerrada.");
+    mostrar("bienvenida", salaLiberada ? "Sesión cerrada." : "Sesión cerrada. No se pudo confirmar la salida de la sala.");
   }));
   controles();
 }

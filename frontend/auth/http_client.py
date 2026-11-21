@@ -133,6 +133,7 @@ class ClienteServidor:
         try:
             return _enviar(Request(url, datos, cabeceras, method=metodo), timeout=10)
         except _ErrorHttp as error:
+            # Solo este 404 permite a US29 crear el perfil de primer ingreso. Un fallo de red debe llegar al menú.
             if metodo == "GET" and ruta == "/api/profile" and error.estado == 404:
                 raise PerfilNoEncontrado("No existe el perfil del jugador.") from error
             raise AuthError(str(error.cuerpo.get("error", "El servidor rechazó la solicitud."))) from error

@@ -20,7 +20,7 @@ class AvatarPredeterminado:
         con los que se dibuja por código.
     Atributos:
         id (str): identificador único, por ejemplo 'avatar_1'.
-        nombre (str): nombre mostrado al usuario, por ejemplo 'Rojo'.
+        nombre (str): nombre mostrado en los selectores de escritorio y móvil.
         color (Tuple[int, int, int]): color RGB del círculo de fondo.
         forma (str): figura blanca del centro: 'circulo', 'cuadrado', 'triangulo',
             'rombo' o 'cruz'.
@@ -32,14 +32,16 @@ class AvatarPredeterminado:
     forma: str
 
 
-# Se dibujan por código y no dependen de archivos de imagen.
+# Los retratos y las figuras en Media usan el ID como nombre de archivo.
+# El color y la forma también permiten dibujar una ficha sin cargar su imagen.
 AVATARES_PREDETERMINADOS: List[AvatarPredeterminado] = [
-    AvatarPredeterminado("avatar_1", "Rojo",     (200, 60, 60),  "circulo"),
-    AvatarPredeterminado("avatar_2", "Azul",     (60, 110, 210), "cuadrado"),
-    AvatarPredeterminado("avatar_3", "Verde",    (60, 170, 90),  "triangulo"),
-    AvatarPredeterminado("avatar_4", "Amarillo", (220, 180, 40), "rombo"),
-    AvatarPredeterminado("avatar_5", "Morado",   (150, 80, 190), "cruz"),
+    AvatarPredeterminado("avatar_1", "Brasa",    (200, 60, 60),  "circulo"),
+    AvatarPredeterminado("avatar_2", "Boreal",   (60, 110, 210), "cuadrado"),
+    AvatarPredeterminado("avatar_3", "Brote",    (60, 170, 90),  "triangulo"),
+    AvatarPredeterminado("avatar_4", "Áureo",    (220, 180, 40), "rombo"),
+    AvatarPredeterminado("avatar_5", "Nebulosa", (150, 80, 190), "cruz"),
 ]
+NOMBRES_PERSONAJES = {avatar.id: avatar.nombre for avatar in AVATARES_PREDETERMINADOS}
 
 
 class ServicioAvatar:
