@@ -8,6 +8,12 @@ from copy import deepcopy
 import math
 
 
+def podio_final(jugadores: list[dict]) -> list[dict]:
+    """Ordena el podio por puntos y desempata los puestos restantes por nombre."""
+    ordenados = sorted(jugadores, key=lambda j: (-j["score"], j["username"].casefold()))
+    return [dict(jugador, position=puesto) for puesto, jugador in enumerate(ordenados, 1)]
+
+
 class GameRules:
     """
     Gestiona las condiciones de finalización; US15 guarda los puntos y cada empate añade una prórroga fija de 120 segundos.

@@ -8,13 +8,17 @@ from unittest.mock import patch
 
 from server import app as servidor
 from backend.repository import SQLiteRepository
-from shared.data import RepositorioPartidaJson
+from frontend import personajes
+from shared.data import Jugador, RepositorioPartidaJson
 from shared.domain import ServicioPartida
 
 
 class GameServerIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        cache = patch.object(servidor, "_RESULTADOS_RECIENTES", {})
+        cache.start()
+        self.addCleanup(cache.stop)
         self.old_repo = servidor.repo
         self.old_file = servidor._GAME_FILE
         self.old_arena = servidor._GAME_ARENA
@@ -72,6 +76,51 @@ class GameServerIntegrationTests(unittest.TestCase):
     @staticmethod
     def _headers(token):
         return {"Authorization": f"Bearer {token}"}
+
+    def test_mobile_catalog_serves_desktop_portraits_and_sprites(self):
+        from flask import template_rendered
+
+        contexts = []
+        def capture(_app, template, context, **extra):
+            contexts.append(context)
+
+        with template_rendered.connected_to(capture, servidor.app):
+            self.assertEqual(self.client_one.get("/movil").status_code, 200)
+        catalog = contexts[0]["avatares"]
+        self.assertEqual({a["id"]: a["nombre"] for a in catalog}, personajes.NOMBRES)
+        self.assertEqual(contexts[0]["escenarios"], [mapa.nombre for mapa in servidor.MAPAS])
+        for avatar in catalog:
+            for field, folder in (("retrato", "retratos"), ("personaje", "personajes")):
+                with self.subTest(avatar=avatar["id"], asset=field):
+                    with self.client_one.get(avatar[field]) as response:
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.mimetype, "image/png")
+                        self.assertEqual(response.data, (personajes.MEDIA / folder / (avatar["id"] + ".png")).read_bytes())
+        self.assertEqual(self.client_one.get("/movil/avatares/retratos/desconocido.png").status_code, 404)
+
+    def test_mobile_lobby_avatar_ids_match_arena_and_keep_desktop_player_format(self):
+        one, two = self._headers("token-one"), self._headers("token-two")
+        self.client_one.post("/api/game/join", headers=one)
+        self.client_two.post("/api/game/join", headers=two)
+        initial = self.client_one.get("/api/game/state", headers=one).json
+        players = [Jugador(**row) for row in initial["partida"]["jugadores"]]
+        first, second = (str(player.id_usuario) for player in players)
+        self.assertEqual(str(initial["jugador_actual_id"]), first)
+        self.assertEqual(initial["avatares_sala"], {first: "avatar_1", second: "avatar_1"})
+
+        custom = {"tipo": "personalizado", "valor": "contenido-png-del-jugador"}
+        self.client_one.put("/api/game/avatar", headers=one, json={"tipo": "predeterminado", "valor": "avatar_3"})
+        self.client_two.put("/api/game/avatar", headers=two, json=custom)
+        self.assertEqual(self.client_one.post("/api/game/start", headers=one).status_code, 200)
+        response = self.client_two.get("/api/game/state", headers=two)
+        state = response.json
+        self.assertEqual(str(state["jugador_actual_id"]), second)
+        self.assertEqual(state["avatares_sala"], {first: "avatar_3", second: "personalizado-" + second})
+        self.assertEqual(state["avatares_sala"], {
+            str(p["user_id"]): p["avatar_id"] for p in state["game"]["players"]
+        })
+        self.assertNotIn(custom["valor"], response.get_data(as_text=True))
+        self.assertEqual(self.client_one.get("/api/game/avatar", query_string={"id": second}, headers=one).json["avatar"], custom)
 
     def test_google_crea_perfiles_distintos_y_conserva_el_nombre_al_reingresar(self):
         for uid in ("google-uno", "google-dos"):
@@ -401,6 +450,51 @@ class GameServerIntegrationTests(unittest.TestCase):
                 con.execute("SELECT COUNT(*) FROM partidas").fetchone()[0],
                 2,
             )
+
+    def test_finished_players_leave_independently_and_the_room_becomes_available(self):
+        self._preparar_partida_reactor(target_score=1)
+        uno, dos = self._headers("token-one"), self._headers("token-two")
+        ganador = servidor._player_id(self.identities["token-one"])
+        servidor._GAME_ARENA.scoreboard.award_extraction(ganador)
+        juego = self.client_one.get("/api/game/state", headers=uno).json["game"]
+        partida = {"partida": juego["match_id"]}
+        self.assertEqual(self.client_one.post("/api/game/leave", query_string=partida, headers=uno).status_code, 200)
+        final = self.client_two.get("/api/game/state", headers=dos).json["game"]
+        self.assertEqual(final["scores"], juego["scores"])
+        self.assertEqual({j["player_id"] for j in final["players"] if not j["connected"]}, {ganador})
+        self.assertEqual(self.client_two.post("/api/game/leave", query_string=partida, headers=dos).status_code, 200)
+        sala = self.client_one.get("/api/game/state", headers=uno).json
+        self.assertIsNone(sala["game"])
+        self.assertEqual(sala["partida"]["jugadores"], [])
+        self.assertNotIn("resultado_anterior", sala)
+
+    def test_late_participant_can_get_previous_podium_after_next_lobby_opens(self):
+        self._preparar_partida_reactor(target_score=1, tokens=("token-one", "token-three", "token-two"))
+        uno, dos, ajeno = (self._headers(t) for t in ("token-one", "token-two", "token-four"))
+        anterior = servidor._GAME_ARENA.match_id
+        servidor._GAME_ARENA.scoreboard.award_extraction(servidor._player_id(self.identities["token-one"]))
+        # El escritorio vuelve a unirse antes de que el móvil haya recibido el último sondeo.
+        self.assertEqual(self.client_one.post("/api/game/join", headers=uno).status_code, 200)
+        query = {"resultado_de": anterior}
+        sala = self.client_two.get("/api/game/state", query_string=query, headers=dos).json
+        self.assertIsNone(sala["game"])
+        podio = sala["resultado_anterior"]
+        self.assertEqual(podio["match_id"], anterior)
+        self.assertTrue(podio["results_persisted"])
+        self.assertEqual([(j["position"], j["username"], j["score"]) for j in podio["players"]],
+                         [(1, "JugadorUno", 1), (2, "JugadorDos", 0), (3, "JugadorTres", 0)])
+        self.assertEqual(podio["winner_id"], podio["players"][0]["player_id"])
+        self.assertEqual(podio["players"][0]["personal_record"], 1)
+        self.assertTrue(podio["players"][0]["new_record"])
+        self.assertNotIn("resultado_anterior", self.client_four.get("/api/game/state", query_string=query, headers=ajeno).json)
+        self.assertEqual(self.client_four.get("/api/game/state", query_string=query).status_code, 401)
+        self.assertEqual(self.client_two.post("/api/game/join", headers=dos).status_code, 200)
+        self.assertEqual(self.client_one.post("/api/game/start", headers=uno).status_code, 200)
+        self.assertEqual(self.client_two.post("/api/game/leave", query_string={"partida": anterior}, headers=dos).status_code, 200)
+        nueva = self.client_two.get("/api/game/state", query_string=query, headers=dos).json
+        self.assertNotEqual(nueva["game"]["match_id"], anterior)
+        self.assertTrue(all(j["connected"] for j in nueva["game"]["players"]))
+        self.assertEqual(nueva["resultado_anterior"], podio)
 
     def test_three_players_receive_consolidated_podium_data_and_personal_records(self):
         clients = (

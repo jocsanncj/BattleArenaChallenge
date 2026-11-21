@@ -191,6 +191,7 @@ class MainMenuScene(BaseScene):
             self.status = "No se pudo abrir el navegador."
 
     def _finalizar_sesion_google(self, intento):
+        # Si el jugador volvió atrás o abrió otro intento, esta pestaña ya no puede iniciar su sesión.
         if intento is not self.intento_google:
             return
         try:

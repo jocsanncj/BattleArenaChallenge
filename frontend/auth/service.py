@@ -121,6 +121,8 @@ class ServicioAuth:
     def preparar_acceso_google(self, credencial: str) -> tuple[Sesion, dict]:
         """Verifica el acceso y carga el perfil antes de activar la sesión del juego."""
         respuesta = self._identidad.iniciar_sesion_google(credencial)
+        # Firebase pide confirmación cuando el correo ya está asociado a otra credencial.
+        # El jugador debe volver a entrar con el método original para conservar su cuenta.
         if respuesta.get("needConfirmation"):
             raise AuthError("Este correo ya tiene una cuenta. Usa su método de acceso original.")
         if respuesta.get("providerId") != "google.com" or respuesta.get("emailVerified") is not True:
@@ -142,6 +144,7 @@ class ServicioAuth:
         nombre_perfil = perfil.get("name")
         if not isinstance(nombre_perfil, str) or not nombre_perfil.strip():
             raise AuthError("El servidor no devolvió un nombre de jugador válido.")
+        # El menú activa esta sesión al recoger el resultado del intento que sigue abierto en Pygame.
         return Sesion(token, refresh, correo, nombre_perfil), perfil
 
     def activar_acceso_google(self, sesion: Sesion) -> None:

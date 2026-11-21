@@ -116,6 +116,11 @@ class MultiplayerArena:
         with self._lock:
             return len(self._connections) >= 2
 
+    def connected_player_ids(self) -> set[str]:
+        """Da las conexiones actuales incluso después de congelar el resultado final."""
+        with self._lock:
+            return set(self._connections.values())
+
     def begin_match(self, now: float | None = None) -> None:
         # Requiere US09: invoque este método cuando ambos jugadores estén listos; también reanuda la partida tras una reconexión.
         now = self._clock() if now is None else now
