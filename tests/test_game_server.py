@@ -122,6 +122,28 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertNotIn(custom["valor"], response.get_data(as_text=True))
         self.assertEqual(self.client_one.get("/api/game/avatar", query_string={"id": second}, headers=one).json["avatar"], custom)
 
+    def test_profile_includes_the_saved_avatar_selection(self):
+        headers = self._headers("token-one")
+        elegido = {"tipo": "predeterminado", "valor": "avatar_3"}
+        self.assertEqual(
+            self.client_one.put("/api/game/avatar", json=elegido, headers=headers).status_code,
+            200,
+        )
+        perfil = self.client_one.get("/api/profile", headers=headers).json["user"]
+        self.assertEqual(perfil["avatar_selection"], elegido)
+        self.assertEqual(perfil["avatar"], "avatar_3")
+
+        personalizado = {"tipo": "personalizado", "valor": "contenido-png-del-jugador"}
+        self.assertEqual(
+            self.client_one.put(
+                "/api/game/avatar", json=personalizado, headers=headers
+            ).status_code,
+            200,
+        )
+        perfil = self.client_one.get("/api/profile", headers=headers).json["user"]
+        self.assertEqual(perfil["avatar_selection"], personalizado)
+        self.assertEqual(perfil["avatar"], "Personalizado")
+
     def test_google_crea_perfiles_distintos_y_conserva_el_nombre_al_reingresar(self):
         for uid in ("google-uno", "google-dos"):
             with self.subTest(uid=uid):

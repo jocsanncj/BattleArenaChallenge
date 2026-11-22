@@ -29,6 +29,7 @@ button { background: #1d4ed8; color: white; font-weight: 600; cursor: pointer; }
 button:disabled { opacity: .65; cursor: default; }
 :focus-visible { outline: 3px solid #93c5fd; outline-offset: 3px; }
 #jugador { font-size: 1.15rem; font-weight: 650; }
+#avatar-perfil { display: block; width: 5.5rem; height: 5.5rem; margin: .5rem 0; object-fit: cover; border-radius: 50%; }
 dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .6rem; margin: .5rem 0 0; }
 dl div { background: #111827; border-radius: .45rem; padding: .6rem; }
 dt { color: #cbd5e1; }

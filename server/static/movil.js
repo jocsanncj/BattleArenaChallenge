@@ -42,6 +42,20 @@ async function cargarPerfil(usuario, accesoGoogle = false) {
 
 function renderPerfil(perfil) {
   document.querySelector("#jugador").textContent = perfil.name;
+  const imagenAvatar = document.querySelector("#avatar-perfil");
+  const avatar = perfil.avatar_selection
+    || { tipo: "predeterminado", valor: "avatar_1" };
+  const retrato = avatar.tipo === "personalizado"
+    ? retratoPersonalizado(avatar.valor)
+    : catalogo.get(avatar.valor)?.retrato || catalogo.get("avatar_1")?.retrato;
+  if (retrato) {
+    imagenAvatar.src = retrato;
+    imagenAvatar.alt = `Avatar de ${perfil.name}`;
+    imagenAvatar.hidden = false;
+  } else {
+    imagenAvatar.removeAttribute("src");
+    imagenAvatar.hidden = true;
+  }
   const stats = perfil.statistics || {};
   const indicadores = {
     Partidas: stats.matches_played ?? 0,

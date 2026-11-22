@@ -1,3 +1,5 @@
+import base64
+from io import BytesIO
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -75,3 +77,24 @@ class GoogleLoginTests(unittest.TestCase):
         self.assertEqual(self.escena.page, "menu")
         self.assertEqual(self.escena.current_user, perfil)
         self.assertEqual(service.usuario_actual(), "Jugador")
+
+    def test_perfil_carga_avatar_predeterminado_y_personalizado(self):
+        self.escena.current_user = {
+            "avatar_selection": {"tipo": "predeterminado", "valor": "avatar_3"}
+        }
+        imagen, nombre = self.escena._crear_avatar_perfil()
+        self.assertEqual(imagen.get_size(), (72, 72))
+        self.assertEqual(nombre, "Brote")
+
+        original = pygame.Surface((24, 32), pygame.SRCALPHA)
+        buffer = BytesIO()
+        pygame.image.save(original, buffer, "avatar.png")
+        self.escena.current_user = {
+            "avatar_selection": {
+                "tipo": "personalizado",
+                "valor": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            }
+        }
+        imagen, nombre = self.escena._crear_avatar_perfil()
+        self.assertEqual(imagen.get_size(), (72, 72))
+        self.assertEqual(nombre, "Personalizado")

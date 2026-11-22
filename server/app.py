@@ -118,7 +118,7 @@ def correo():
 def leer_perfil(claims):
     if claims.get("email_verified") is not True:
         raise PermissionError("Verifica tu correo para consultar el perfil.")
-    return {"user": repo.obtener(claims["uid"], True).to_dict()}
+    return {"user": _perfil_con_avatar(claims)}
 
 @app.post("/api/profile")
 @requiere_sesion
@@ -143,7 +143,7 @@ def guardar_perfil(claims):
         raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
     # El UID vincula este perfil con sus partidas. Si ya existe, el repositorio conserva su nombre de jugador.
     repo.crear(claims["uid"], nombre.strip(), claims["email"])
-    return {"user": repo.obtener(claims["uid"], claims["email_verified"]).to_dict()}
+    return {"user": _perfil_con_avatar(claims)}
 
 @app.get("/api/ranking")
 def obtener_ranking():
@@ -170,6 +170,36 @@ def _id_jugador(claims):
 def _player_id(claims):
     """Usa el identificador estable del modelo de sala sin exponer el UID de Firebase."""
     return str(_id_jugador(claims))
+
+def _perfil_con_avatar(claims):
+    """Incluye en el perfil la elección de avatar persistida para la cuenta autenticada."""
+    perfil = repo.obtener(claims["uid"], claims["email_verified"]).to_dict()
+    # La elección online está en el JSON compartido, no en la columna avatar de SQLite.
+    with _GAME_LOCK:
+        eleccion = (
+            _leer_estado_juego()
+            .get("avatares", {})
+            .get(_player_id(claims))
+        )
+    if (
+        not isinstance(eleccion, dict)
+        or eleccion.get("tipo") not in {"predeterminado", "personalizado"}
+        or not isinstance(eleccion.get("valor"), str)
+        or len(eleccion["valor"]) > 2_000_000
+    ):
+        eleccion = {"tipo": "predeterminado", "valor": "avatar_1"}
+    elif (
+        eleccion["tipo"] == "predeterminado"
+        and eleccion["valor"] not in NOMBRES_PERSONAJES
+    ):
+        eleccion = {"tipo": "predeterminado", "valor": "avatar_1"}
+    perfil["avatar_selection"] = eleccion
+    perfil["avatar"] = (
+        eleccion["valor"]
+        if eleccion.get("tipo") == "predeterminado"
+        else "Personalizado"
+    )
+    return perfil
 
 def _partida_vacia():
     return {

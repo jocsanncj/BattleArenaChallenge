@@ -1,9 +1,14 @@
 """Navegación de bienvenida, autenticación, verificación y perfil."""
+import base64
+from io import BytesIO
+
 from frontend import visual as v
 from frontend.audio import musica
+from frontend import personajes
 
 import pygame
 from frontend.auth.google_web import abrir_login_google, descartar_login_google
+from shared.domain.avatares import NOMBRES_PERSONAJES
 
 from frontend.auth.service import (
     CorreoPendiente,
@@ -45,6 +50,8 @@ class MainMenuScene(BaseScene):
         self.failed_attempts = 0
         self.last_login_identifier = ""
         self.profile_scroll = 0
+        self.profile_avatar = None
+        self.profile_avatar_label = "Avatar predeterminado"
         # Crea los botones y campos iniciales para la pantalla de bienvenida.
         self._configure_page()
         self.ranking = []
@@ -300,6 +307,41 @@ class MainMenuScene(BaseScene):
             return
         self.profile_scroll = 0
         self._set_page("profile")
+        try:
+            self.profile_avatar, self.profile_avatar_label = self._crear_avatar_perfil()
+        except (ValueError, pygame.error) as error:
+            self.profile_avatar = None
+            self.profile_avatar_label = "Avatar no disponible"
+            self.status = f"No se pudo cargar el avatar del perfil: {error}"
+
+    def _crear_avatar_perfil(self):
+        eleccion = self.current_user.get("avatar_selection")
+        if not isinstance(eleccion, dict):
+            eleccion = {"tipo": "predeterminado", "valor": "avatar_1"}
+
+        tipo = eleccion.get("tipo")
+        valor = eleccion.get("valor")
+        if (
+            tipo == "predeterminado"
+            and isinstance(valor, str)
+            and valor in NOMBRES_PERSONAJES
+        ):
+            return personajes.imagen(valor, 72, "retratos"), NOMBRES_PERSONAJES[valor]
+        if tipo == "personalizado" and isinstance(valor, str):
+            imagen = pygame.image.load(
+                BytesIO(base64.b64decode(valor, validate=True)),
+                "avatar.png",
+            )
+            ancho, alto = imagen.get_size()
+            lado = min(ancho, alto)
+            recorte = imagen.subsurface(
+                ((ancho - lado) // 2, (alto - lado) // 2, lado, lado)
+            ).copy()
+            return pygame.transform.smoothscale(recorte, (72, 72)), "Personalizado"
+        return (
+            personajes.imagen("avatar_1", 72, "retratos"),
+            NOMBRES_PERSONAJES["avatar_1"],
+        )
 
     ## @brief Abre las pantallas online dentro del ciclo de escenas del cliente.
     ## @return None. Si ocurre un error de conexión, lo muestra en el menú.
@@ -381,7 +423,7 @@ class MainMenuScene(BaseScene):
                 button.handle_event(event)
         # La rueda desplaza las líneas dentro del perfil sin mover otros paneles.
         if self.page == "profile" and event.type == pygame.MOUSEWHEEL:
-            max_scroll = max(0, len(self._profile_lines()) - 14)
+            max_scroll = max(0, len(self._profile_lines()) - 12)
             self.profile_scroll = max(
                 0, min(max_scroll, self.profile_scroll - event.y)
             )
@@ -455,27 +497,37 @@ class MainMenuScene(BaseScene):
     def _draw_profile(self, surface):
         # Lee el estado de verificación, avatar y récord del perfil actual.
         verified = self.current_user.get("verificado") is True
-        avatar = self.current_user.get("avatar")
         record = self.current_user.get("record", 0)
         self._draw_centered(surface, "Perfil del jugador", 70)
         self._draw_centered(
             surface, f"Nombre: {self.current_user.get('name', self.user_name)}",
             115, self.font
         )
+        if self.profile_avatar is not None:
+            surface.blit(
+                self.profile_avatar,
+                self.profile_avatar.get_rect(
+                    center=(surface.get_width() // 2, 164)
+                ),
+            )
+        else:
+            self._draw_avatar_placeholder(
+                surface,
+                self.current_user.get("name", self.user_name),
+                164,
+            )
         self._draw_centered(
-            surface, f"Avatar: {avatar if avatar else 'null (sin avatar asignado)'}",
-            145, self.font
+            surface, f"Avatar: {self.profile_avatar_label}", 207, self.font
         )
         self._draw_centered(
-            surface, f"Correo: {'Verificado' if verified else 'Pendiente'}",
-            175, self.font
+            surface, f"Correo: {'Verificado' if verified else 'Pendiente'}", 235, self.font
         )
         self._draw_centered(
-            surface, f"Puntuación máxima: {record}", 205, self.font
+            surface, f"Puntuación máxima: {record}", 263, self.font
         )
 
         # Limita estadísticas e historial a una ventana gráfica desplazable.
-        viewport = pygame.Rect(80, 230, 740, 285)
+        viewport = pygame.Rect(80, 285, 740, 230)
         surface.set_clip(viewport)
         for index, line in enumerate(self._profile_lines()[self.profile_scroll:]):
             color = TEXTO if line and not (
