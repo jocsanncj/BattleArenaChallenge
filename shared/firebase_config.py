@@ -4,8 +4,9 @@ import os
 
 
 def configuracion_firebase_web() -> dict[str, str]:
-    # /movil y la ventana de acceso de Pygame leen estos datos en el navegador.
-    # El archivo de Firebase Admin se carga por separado en el servidor para validar los tokens.
+    # Las plantillas de /movil y del acceso de escritorio pasan este diccionario al navegador para inicializar
+    # el SDK de Firebase en el mismo proyecto. apiKey se lee del entorno al preparar cada página.
+    # El servidor verifica los tokens con su propia cuenta de servicio, que se carga en _firebase_app().
     return {
         "apiKey": os.getenv("FIREBASE_API_KEY", "").strip(),
         "projectId": "proyecto-modelado-dee24",

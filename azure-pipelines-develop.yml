@@ -15,6 +15,9 @@ steps:
   - script: python -m pip install -r requirements.txt pytest
     displayName: Instalar dependencias
 
+  - script: docker build -t battle-arena-servidor:$(Build.BuildId) .
+    displayName: Construir imagen del servidor
+
   - script: |
       mkdir -p test-results
       python -m pytest tests/ -v --junitxml=test-results/pytest.xml
@@ -29,5 +32,5 @@ steps:
     condition: succeededOrFailed()
     inputs:
       testResultsFormat: JUnit
-      testResultsFiles: test-results/pytest.xml
+      testResultsFiles: 'test-results/pytest.xml'
       failTaskOnFailedTests: true

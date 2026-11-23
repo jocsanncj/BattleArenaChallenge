@@ -1,5 +1,6 @@
 """Arte vectorial de Battle Arena. Las superficies estáticas se dibujan una sola vez."""
 from functools import lru_cache
+from pathlib import Path
 import random
 import pygame
 
@@ -90,18 +91,20 @@ def lineas(s, texto, rect, color, tam=13):
 
 @lru_cache(maxsize=12)
 def guardian(tipo, tam):
-    from pathlib import Path
     nombre = "perseguidor" if tipo == "perseguidor" else "vigilante"
     ruta = Path(__file__).resolve().parents[1] / "Media" / "guardianes" / (nombre+".png")
     return pygame.transform.smoothscale(pygame.image.load(str(ruta)), (tam, tam))
 
 
-def barra_salud(superficie, entidad, x, y, ancho):
-    actual, maxima = entidad.get("salud"), entidad.get("salud_maxima")
-    pygame.draw.rect(superficie, (71,79,93), (x,y,ancho,4))
-    if isinstance(actual,(int,float)) and isinstance(maxima,(int,float)) and maxima>0:
-        largo = round(ancho * max(0,min(1,actual/maxima)))
-        pygame.draw.rect(superficie,(102,226,159),(x,y,largo,4))
-    else:
-        for i in range(0,ancho-2,7):
-            pygame.draw.line(superficie, (126,134,146), (x+i,y+3),(x+i+2,y))
+@lru_cache(maxsize=12)
+def sprite_trampa(tipo, tam):
+    nombre = tipo if tipo in ("jaula", "arenas_movedizas", "campo_electrico") else "jaula"
+    ruta = Path(__file__).resolve().parents[1] / "Media" / "trampas" / (nombre + ".png")
+    return pygame.transform.smoothscale(pygame.image.load(str(ruta)), (tam, tam))
+
+
+@lru_cache(maxsize=4)
+def sprite_puerta(abierta, tam):
+    nombre = "abierta.png" if abierta else "cerrada.png"
+    ruta = Path(__file__).resolve().parents[1] / "Media" / "puertas" / nombre
+    return pygame.transform.smoothscale(pygame.image.load(str(ruta)), (tam, tam))

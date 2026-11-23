@@ -41,6 +41,8 @@ _lock = threading.Lock()
 _GAME_FIREBASE_UIDS = {}
 
 
+# Al verificar el primer token, carga la cuenta de servicio desde FIREBASE_ADMIN_CREDENTIALS o el archivo local.
+# El bloqueo evita inicializar dos veces Firebase Admin si llegan dos solicitudes a la vez.
 def _firebase_app():
     with _lock:
         try:
@@ -59,8 +61,11 @@ def _firebase_app():
                 raise RuntimeError("No se pudo inicializar Firebase Admin.") from e
 
 
+# Flask envuelve con este decorador las rutas que necesitan identificar al jugador antes de ejecutar la acción.
 def requiere_sesion(f):
     """Valida el token Bearer y le pasa los claims a la ruta."""
+    # Lee el ID token de la cabecera Authorization, comprueba su validez y si fue revocado. Entrega a la ruta
+    # el UID y el correo confirmados por Firebase. Un token inválido detiene la petición antes de consultar el juego.
     @wraps(f)
     def interior(*args, **kwargs):
         esquema, _, token = request.headers.get("Authorization", "").partition(" ")
@@ -120,6 +125,9 @@ def leer_perfil(claims):
         raise PermissionError("Verifica tu correo para consultar el perfil.")
     return {"user": _perfil_con_avatar(claims)}
 
+# Los clientes llaman a POST /api/profile al crear la ficha. Si llega un nombre, se valida el que envió el cliente.
+# Un formulario vacío activa el alta automática de Google. En la respuesta, renderPerfil del móvil lee
+# avatar_selection de US04 para mostrar el retrato del catálogo o la imagen que subió el jugador.
 @app.post("/api/profile")
 @requiere_sesion
 def guardar_perfil(claims):
@@ -127,8 +135,8 @@ def guardar_perfil(claims):
     if not isinstance(formulario, dict):
         raise ValueError("Envía un objeto JSON para crear el perfil.")
     if formulario == {}:
-        # En el primer acceso con Google (US29), el móvil envía {}. El servidor
-        # calcula el nombre inicial con los datos del token que validó requiere_sesion.
+        # El móvil envía {} al entrar con Google por primera vez. Solo se genera el nombre si el token
+        # identifica a google.com como proveedor y Firebase confirmó el correo de esa cuenta.
         firebase = claims.get("firebase")
         if (
             not isinstance(firebase, dict)
@@ -141,7 +149,7 @@ def guardar_perfil(claims):
         nombre = formulario.get("name")
     if not isinstance(nombre, str) or not nombre.strip() or len(nombre) > 40:
         raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
-    # El UID vincula este perfil con sus partidas. Si ya existe, el repositorio conserva su nombre de jugador.
+    # SQLite usa el UID como identidad estable. Repetir la solicitud con otro nombre conserva la ficha existente.
     repo.crear(claims["uid"], nombre.strip(), claims["email"])
     return {"user": _perfil_con_avatar(claims)} #Avatar visible
 
@@ -293,6 +301,8 @@ def _estado_reactor(ahora):
         }
     return {"status": "disponible", "remaining_seconds": 0.0}
 
+# Recibe la instantánea de la arena. Al terminar, relaciona cada player_id con su cuenta de Firebase
+# para guardar el resultado y recuperar sus marcas personales. Ambos clientes reciben los mismos puestos.
 def _persistir_resultado_partida(estado):
     if estado.get("status") != "finished":
         return
@@ -334,12 +344,15 @@ def _persistir_resultado_partida(estado):
         "scores": estado["scores"].copy(), "players": podio_final(jugadores),
         "duration_seconds": int(estado["elapsed_seconds"]), "results_persisted": True,
     }
-    # El podio sigue disponible si escritorio ya abrió la siguiente sala entre dos sondeos del móvil.
+    # Conserva en memoria hasta 32 partidas recientes, cada una identificada por match_id. Los UID permiten
+    # comprobar quién participó si el móvil lo solicita después de que el escritorio haya abierto otra sala.
     _RESULTADOS_RECIENTES[match_id] = (frozenset(marcas), resultado)
     if len(_RESULTADOS_RECIENTES) > 32:
         del _RESULTADOS_RECIENTES[next(iter(_RESULTADOS_RECIENTES))]
     return resultado
 
+# Devuelve None mientras no hay arena. Durante la partida avanza el reloj y reúne el estado del reactor,
+# los obstáculos y los guardianes para que ambos clientes dibujen las posiciones que confirmó el servidor.
 def _estado_arena():
     if _GAME_ARENA is None:
         return None
@@ -401,6 +414,8 @@ def _estado_arena():
     estado["reactor"] = _estado_reactor(ahora)
     resultado = _persistir_resultado_partida(estado)
     if resultado:
+        # El podio y la duración ya están guardados. Se vuelven a consultar las conexiones porque alguien
+        # puede salir de la pantalla final mientras los demás siguen viendo el mismo resultado.
         estado["results_persisted"] = True
         estado["duration_seconds"] = resultado["duration_seconds"]
         podio = {j["player_id"]: j for j in resultado["players"]}
@@ -417,6 +432,8 @@ def _estado_arena():
         estado["winner_user_id"] = _GAME_PLAYER_IDS.get(estado["winner_id"])
     return estado
 
+# Recibe las selecciones guardadas y el ID del participante. Devuelve la clave del catálogo o, para una
+# imagen propia, personalizado-<id>. Así el móvil identifica el retrato sin repetir sus bytes en cada sondeo.
 def _avatar_en_partida(avatares, id_usuario):
     eleccion = avatares.get(str(id_usuario)) or {}
     if eleccion.get("tipo") == "personalizado":
@@ -425,6 +442,8 @@ def _avatar_en_partida(avatares, id_usuario):
     return avatar_id if avatar_id in NOMBRES_PERSONAJES else "avatar_1"
 
 
+# Al iniciar la partida convierte la sala guardada en una arena de dos o tres jugadores con sus reglas y mapa.
+# Cada participante entra con su ID, su nombre y el mismo avatar que el móvil mostró en la espera.
 def _iniciar_arena(partida):
     global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_GUARDIANES, _GAME_EVENTOS, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
     jugadores = partida.get("jugadores", [])
@@ -579,6 +598,8 @@ _PLANOS = [
 @requiere_sesion
 def leer_partida_juego(claims):
     """Devuelve la sala y el estado de juego producido por el servidor."""
+    # El sondeo del móvil recibe la sala, el mapa y la partida si ya empezó. jugador_actual_id permite
+    # localizar al usuario autenticado entre los participantes y mostrar sus controles.
     id_usuario, _, _ = _validar_jugador(claims)
     with _GAME_LOCK:
         estado_guardado = _leer_estado_juego()
@@ -601,6 +622,8 @@ def leer_partida_juego(claims):
             "jugador_actual_id": id_usuario,
             "avatares_sala": avatares_sala,
         }
+        # resultado_de identifica la última partida que vio el teléfono. Si ya cambió la arena, busca ese podio
+        # en memoria y comprueba el UID del solicitante antes de incluirlo como resultado_anterior.
         anterior = request.args.get("resultado_de")
         if anterior and (juego is None or anterior != juego["match_id"]):
             guardado = _RESULTADOS_RECIENTES.get(anterior)
@@ -667,6 +690,8 @@ def salir_partida_juego(claims):
     user_id, player_id, _ = _validar_jugador(claims)
     with _GAME_LOCK:
         global _GAME_ARENA
+        # Al salir del podio, el móvil envía el match_id en ?partida=. Si la sala ya cambió,
+        # se confirma la petición sin desconectar al jugador de su nueva partida.
         origen = request.args.get("partida")
         if origen is not None and (_GAME_ARENA is None or _GAME_ARENA.match_id != origen):
             return {"ok": True}
@@ -678,6 +703,7 @@ def salir_partida_juego(claims):
                 _GAME_EVENTOS.pausar()
             snapshot = _GAME_ARENA.snapshot()
             _persistir_resultado_partida(snapshot)
+            # Cada participante cierra su podio a su ritmo. Solo se libera la sala cuando sale el último.
             if not _GAME_ARENA.connected_player_ids():
                 _GAME_ARENA = None
                 estado["partida"] = _partida_vacia()

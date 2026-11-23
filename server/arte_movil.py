@@ -15,12 +15,15 @@ from shared.escenarios import MAPAS
 arte_movil = Blueprint("arte_movil", __name__)
 GUARDIANES = Path(__file__).resolve().parents[1] / "Media" / "guardianes"
 TIPOS_GUARDIAN = ("perseguidor", "vigilante")
+TIPOS_TRAMPA = ("jaula", "arenas_movedizas", "campo_electrico")
 LADO = 36
 
 
+# Recibe los índices de escenario y paleta. Convierte una copia del tablero Pygame en bytes PNG y calcula
+# su huella SHA-256. La caché reutiliza ambos valores cuando otro jugador solicita la misma combinación.
 @lru_cache(maxsize=len(MAPAS) * len(PALETAS))
 def _tablero_png(escenario, tema):
-    # La rotación cambia la paleta. Los obstáculos y el reactor siguen en el mismo mapa.
+    # Se dibuja sobre una copia para conservar intacta la superficie que comparte el escritorio.
     mapa = MAPAS[escenario]
     superficie = tablero(mapa, tema, LADO).copy()
     reactor(superficie, mapa, tema, LADO, segundos=None)
@@ -30,6 +33,8 @@ def _tablero_png(escenario, tema):
     return contenido, sha256(contenido).hexdigest()
 
 
+# La URL elige un escenario y un tema del catálogo. Si existen, la respuesta lleva el PNG y su huella (ETag).
+# Si el navegador envía la misma huella con If-None-Match, puede recibir 304 y reutilizar su copia local.
 @arte_movil.get("/movil/arena/tableros/<int:escenario>/<int:tema>.png")
 def imagen_tablero(escenario, tema):
     if escenario >= len(MAPAS) or tema >= len(PALETAS):
@@ -38,6 +43,8 @@ def imagen_tablero(escenario, tema):
     return send_file(BytesIO(contenido), mimetype="image/png", etag=etiqueta)
 
 
+# El móvil usa el tipo comunicado por la arena para pedir la imagen del perseguidor o del vigilante.
+# Ambos nombres identifican ficheros del juego. Cualquier otro tipo recibe un 404.
 @arte_movil.get("/movil/arena/guardianes/<tipo>.png")
 def imagen_guardian(tipo):
     if tipo not in TIPOS_GUARDIAN:
@@ -45,6 +52,22 @@ def imagen_guardian(tipo):
     return send_from_directory(GUARDIANES, tipo + ".png")
 
 
+@arte_movil.get("/movil/arena/puertas/<estado>.png")
+def imagen_puerta(estado):
+    if estado not in ("abierta", "cerrada"):
+        abort(404)
+    return send_from_directory(Path(__file__).resolve().parents[1] / "Media" / "puertas", estado + ".png")
+
+
+@arte_movil.get("/movil/arena/trampas/<tipo>.png")
+def imagen_trampa(tipo):
+    if tipo not in TIPOS_TRAMPA:
+        abort(404)
+    return send_from_directory(Path(__file__).resolve().parents[1] / "Media" / "trampas", tipo + ".png")
+
+
+# La plantilla de /movil llama a esta función y entrega el diccionario como JSON en arte-arena. El lienzo
+# usa el tamaño de casilla, el centro del reactor y las URL por escenario y tema para dibujar a escala.
 @arte_movil.app_template_global()
 def catalogo_arte_arena():
     return {
@@ -60,6 +83,9 @@ def catalogo_arte_arena():
             for i, mapa in enumerate(MAPAS)
         ],
         "coloresLuz": ["#%02x%02x%02x" % paleta[-1] for paleta in PALETAS],
+        "puertas": {estado: url_for("arte_movil.imagen_puerta", estado=estado)
+                    for estado in ("abierta", "cerrada")},
+        "trampas": {tipo: url_for("arte_movil.imagen_trampa", tipo=tipo) for tipo in TIPOS_TRAMPA},
         "guardianes": {tipo: url_for("arte_movil.imagen_guardian", tipo=tipo)
                       for tipo in TIPOS_GUARDIAN},
     }

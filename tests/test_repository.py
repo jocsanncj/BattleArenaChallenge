@@ -108,6 +108,8 @@ class SQLiteRepositoryTests(unittest.TestCase):
             ["JugadorUno", "JugadorDos"],
         )
 
+    # Crea una base con el esquema antiguo y una victoria de siete puntos. Al abrirla con el repositorio actual,
+    # el perfil, el historial y el ranking deben seguir mostrando el resultado.
     def test_migrates_existing_partidas_table_without_losing_rows(self):
         legacy_path = Path(self.temp.name) / "legacy.db"
         with closing(sqlite3.connect(legacy_path)) as con, con:

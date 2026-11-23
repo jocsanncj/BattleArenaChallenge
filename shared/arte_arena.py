@@ -14,10 +14,14 @@ PALETAS = (
 PERIODO = 20
 
 
+# Cuando la rotación está activa, el escritorio usa el tiempo transcurrido para avanzar una paleta cada
+# PERIODO segundos. El resto de la división reinicia el ciclo. El móvil recibe el mismo periodo en el catálogo.
 def fase(inicial, segundos):
     return (inicial + int(max(0, segundos) // PERIODO)) % len(PALETAS)
 
 
+# Pinta directamente sobre la superficie de Pygame. Usa el ancho, la altura y los tres colores de la
+# paleta para que el cristal del reactor y los del tablero tengan la misma luz y sombra.
 def cristal(s, x, y, r, h, claro, sombra, luz):
     a, b, c, d = (x, y-h), (x+r, y-h//3), (x, y), (x-r, y-h//3)
     pygame.draw.polygon(s, sombra, [a, b, c, d])
@@ -25,6 +29,9 @@ def cristal(s, x, y, r, h, claro, sombra, luz):
     pygame.draw.line(s, luz, a, d, 2)
 
 
+# Convierte las filas y columnas del escenario en una superficie usando el tamaño de casilla en píxeles.
+# La superficie queda en caché por mapa, tema y tamaño. El escritorio la dibuja directamente y la ruta
+# móvil copia esa misma base para añadir el reactor y enviarla como PNG.
 @lru_cache(maxsize=12)
 def tablero(mapa, tema, lado):
     piso, junta, claro, sombra, luz = PALETAS[tema]
@@ -85,6 +92,8 @@ def tablero(mapa, tema, lado):
     return s
 
 
+# Convierte el centro del reactor de casillas a píxeles y pinta su base y su cristal sobre la superficie.
+# El escritorio pasa los segundos transcurridos para girar los arcos. El PNG del móvil se genera con None.
 def reactor(s, mapa, tema, lado, segundos):
     cx,cy = mapa.centro_reactor()
     x,y = int((cx+.5)*lado),int((cy+.5)*lado)
@@ -92,7 +101,7 @@ def reactor(s, mapa, tema, lado, segundos):
     r = int(lado*1.34)
     pygame.draw.circle(s,INK,(x,y),r)
     pygame.draw.circle(s,claro,(x,y),r,2)
-    # En la imagen web, Canvas anima los arcos sobre el mismo tablero y cristal.
+    # El navegador añade sus propios arcos animados al dibujar el PNG en el lienzo.
     if segundos is not None:
         for i in range(8):
             a = segundos*.7+i*math.pi/4

@@ -45,6 +45,7 @@ class MainMenuScene(BaseScene):
         self.status = ""
         self.user_name = ""
         self.current_user = {}
+        # Este campo enlaza la pantalla con el intento de la pestaña abierta. None indica a update() que todavía no hay respuesta que recoger.
         self.intento_google = None
         # Lleva la cuenta local de fallos consecutivos de inicio de sesión.
         self.failed_attempts = 0
@@ -71,6 +72,7 @@ class MainMenuScene(BaseScene):
     ## @param page Identificador interno de pantalla.
     ## @return None.
     def _set_page(self, page):
+        # Al cambiar de pantalla, la respuesta tardía de la pestaña anterior pierde validez.
         descartar_login_google(self.intento_google)
         self.intento_google = None
         # Guarda la pantalla que determinará dibujo, campos y navegación.
@@ -112,6 +114,7 @@ class MainMenuScene(BaseScene):
             ]
             self._button(250, 375, 190, "Entrar", self._iniciar_sesion)
             self._button(460, 375, 190, "Recuperar contraseña", self._abrir_recuperacion)
+            # El botón de Google abre el navegador; «Volver» regresa a la bienvenida y descarta el intento.
             self._button(250, 445, 245, "Continua con Google", self._iniciar_sesion_google)
             self._button(510, 445, 140, "Volver", lambda: self._set_page("welcome"))
         elif self.page == "email_pending":
@@ -190,6 +193,8 @@ class MainMenuScene(BaseScene):
             self._set_page("email_error")
             self.status = message
 
+    ## @brief Al pulsar «Continua con Google», guarda el intento que consultará update() mientras el jugador elige su cuenta.
+    ## @details Si el navegador no se puede abrir, deja la pantalla de acceso disponible para volver a intentarlo.
     def _iniciar_sesion_google(self):
         self.intento_google = abrir_login_google()
         if self.intento_google:
@@ -197,6 +202,8 @@ class MainMenuScene(BaseScene):
         else:
             self.status = "No se pudo abrir el navegador."
 
+    ## @brief Cuando el Future termina, recoge la sesión y el perfil del intento que sigue en pantalla.
+    ## @details Si el resultado contiene un error, lo muestra en el login. Si contiene el perfil, activa la sesión y abre el menú.
     def _finalizar_sesion_google(self, intento):
         # Si el jugador volvió atrás o abrió otro intento, esta pestaña ya no puede iniciar su sesión.
         if intento is not self.intento_google:
@@ -218,6 +225,7 @@ class MainMenuScene(BaseScene):
     ## @brief Envía credenciales e interpreta éxito, errores y fallos consecutivos.
     ## @return None.
     def _iniciar_sesion(self):
+        # Si el jugador elige la contraseña, descarta el intento de Google que seguía abierto.
         descartar_login_google(self.intento_google)
         self.intento_google = None
         # Lee el identificador y contraseña de los campos visibles.
@@ -436,7 +444,8 @@ class MainMenuScene(BaseScene):
             elif self.page == "recovery_request":
                 self._solicitar_recuperacion()
 
-    ## @brief Recoge el resultado del navegador en el hilo de Pygame cuando termina el intento de Google.
+    ## @brief El bucle de Pygame comprueba en cada fotograma si el jugador canceló o si ya llegó un resultado del navegador.
+    ## @details Solo llama a _finalizar_sesion_google cuando el Future está listo, para que la ventana siga respondiendo.
     ## @param mouse_pos Posición actual del cursor.
     ## @return None.
     def update(self, mouse_pos):
