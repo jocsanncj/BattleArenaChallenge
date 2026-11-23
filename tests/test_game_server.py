@@ -256,11 +256,15 @@ class GameServerIntegrationTests(unittest.TestCase):
             "/api/game/start", headers=self._headers("token-one")
         ).status_code, 200)
 
+        for trampa in servidor._GAME_OBSTACULOS.trampas:
+            if (trampa.x, trampa.y) == (2, 1):
+                trampa.activa = False
         movement = self.client_one.post(
             "/api/game/move", json={"direction": "right"},
             headers=self._headers("token-one"),
         )
         self.assertEqual(movement.status_code, 200)
+        self.assertTrue(movement.json["ok"])
         self.assertEqual(movement.json["state"]["players"][0]["score"], 0)
 
         winner_id = self._poner_junto_al_reactor("token-one")
@@ -314,6 +318,26 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertEqual(len(shared["players"]), 2)
         expected_user_id = int.from_bytes(hashlib.sha256(b"user-one").digest()[:4], "big") & 0x7fffffff
         self.assertEqual(shared["players"][0]["user_id"], expected_user_id)
+
+    def test_trap_on_movement_tile_prevents_reactor_extraction(self):
+        self._preparar_partida_reactor()
+        trampa = servidor._GAME_OBSTACULOS.trampas[0]
+        trampa.x, trampa.y = 2, 1
+        movement = self.client_one.post(
+            "/api/game/move", json={"direction": "right"},
+            headers=self._headers("token-one"),
+        )
+        self.assertTrue(movement.json["ok"])
+        self.assertEqual(movement.json["state"]["players"][0]["estado_temporal"], "inmovilizado")
+
+        self._poner_junto_al_reactor("token-one")
+        response = self.client_one.post(
+            "/api/game/reactor",
+            json={"action": "start", "event_id": "trapped"},
+            headers=self._headers("token-one"),
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("inmovilizado", response.json["error"])
 
     def test_reactor_rejects_out_of_zone_busy_and_cooldown_interactions(self):
         self._preparar_partida_reactor()
