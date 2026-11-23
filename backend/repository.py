@@ -184,6 +184,34 @@ class SQLiteRepository:
                     "UPDATE jugadores SET record = MAX(record, ?) WHERE uid = ?",
                     [(puntaje, uid) for uid, puntaje, _ in filas],
                 )
+                for uid, _, _ in filas: #Logros del juego
+                    estadisticas = con.execute(
+                        """
+                        SELECT COUNT(*) AS partidas,
+                            COALESCE(SUM(puntaje), 0) AS puntos,
+                            SUM(CASE WHEN resultado = 'victoria'
+                                THEN 1 ELSE 0 END) AS victorias
+                        FROM partidas
+                        WHERE uid = ?
+                        """,
+                        (uid,),
+                    ).fetchone()
+                    logros = []
+                    if estadisticas["partidas"] >= 1:
+                        logros.append("Primera partida")
+                    if estadisticas["victorias"] >= 1:
+                        logros.append("Primera victoria")
+                    if estadisticas["partidas"] >= 10:
+                        logros.append("Competidor")
+                    if estadisticas["puntos"] >= 100:
+                        logros.append("Acumulador de energía")
+                    con.executemany(
+                        """
+                        INSERT INTO logros (uid, titulo) VALUES (?, ?)
+                        ON CONFLICT(uid, titulo) DO NOTHING
+                        """,
+                        [(uid, titulo) for titulo in logros],
+                    )
         except sqlite3.IntegrityError as error:
             raise RepositoryError(
                 "No se pudo guardar el resultado de la partida."

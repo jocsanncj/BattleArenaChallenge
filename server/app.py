@@ -143,7 +143,7 @@ def guardar_perfil(claims):
         raise ValueError("El nombre debe tener entre 1 y 40 caracteres.")
     # El UID vincula este perfil con sus partidas. Si ya existe, el repositorio conserva su nombre de jugador.
     repo.crear(claims["uid"], nombre.strip(), claims["email"])
-    return {"user": _perfil_con_avatar(claims)}
+    return {"user": _perfil_con_avatar(claims)} #Avatar visible
 
 @app.get("/api/ranking")
 def obtener_ranking():
@@ -170,7 +170,7 @@ def _id_jugador(claims):
 def _player_id(claims):
     """Usa el identificador estable del modelo de sala sin exponer el UID de Firebase."""
     return str(_id_jugador(claims))
-
+#Carga avatar en el perfil
 def _perfil_con_avatar(claims):
     """Incluye en el perfil la elección de avatar persistida para la cuenta autenticada."""
     perfil = repo.obtener(claims["uid"], claims["email_verified"]).to_dict()

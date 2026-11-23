@@ -76,6 +76,15 @@ function renderPerfil(perfil) {
     return grupo;
   });
   document.querySelector("#estadisticas").replaceChildren(...tarjetas);
+  const logros = perfil.achievements; //Logros en movil
+  document.querySelector("#estado-logros").textContent =
+    logros.length ? "" : "Aún no hay logros.";
+  const elementosLogros = logros.map(logro => {
+    const elemento = document.createElement("li");
+    elemento.textContent = logro;
+    return elemento;
+  });
+  document.querySelector("#logros").replaceChildren(...elementosLogros);
 
   const historial = perfil.match_history || [];
   document.querySelector("#estado-historial").textContent = historial.length ? "" : "Aún no tienes partidas registradas.";

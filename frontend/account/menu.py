@@ -306,7 +306,7 @@ class MainMenuScene(BaseScene):
             self.status = str(error)
             return
         self.profile_scroll = 0
-        self._set_page("profile")
+        self._set_page("profile") #Creacion de avatar en perfil
         try:
             self.profile_avatar, self.profile_avatar_label = self._crear_avatar_perfil()
         except (ValueError, pygame.error) as error:
