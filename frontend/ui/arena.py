@@ -218,21 +218,10 @@ class PantallaArena(Pantalla):
             pygame.draw.rect(superficie, (245, 245, 245), rect, 2, border_radius=5)
             marca = pygame.font.Font(None, 20).render("P", True, (255, 255, 255))
             superficie.blit(marca, marca.get_rect(center=rect.center))
-        colores_trampas = {
-            "jaula": (230, 180, 55),
-            "arenas_movedizas": (165, 115, 65),
-            "campo_electrico": (160, 90, 230),
-        }
-        marcas_trampas = {"jaula": "J", "arenas_movedizas": "A", "campo_electrico": "E"}
         for trampa in obstaculos.get("trampas", []):
-            if not trampa.get("activa", True):
-                continue
-            centro_trampa = (trampa["x"] * T + T // 2, trampa["y"] * T + T // 2)
-            pygame.draw.circle(superficie, colores_trampas.get(trampa["tipo"], (230, 90, 90)),
-                               centro_trampa, T // 2 - 3)
-            marca = pygame.font.Font(None, 20).render(
-                marcas_trampas.get(trampa["tipo"], "!"), True, (255, 255, 255))
-            superficie.blit(marca, marca.get_rect(center=centro_trampa))
+            if trampa.get("activa", True):
+                sprite = v.sprite_trampa(trampa["tipo"], T - 2)
+                superficie.blit(sprite, (trampa["x"] * T + 1, trampa["y"] * T + 1))
 
         # US-22.1: energía adicional enviada por el servidor.
         energia = juego.get("energia_adicional")
@@ -260,7 +249,6 @@ class PantallaArena(Pantalla):
             gx, gy = int(guardian["x"]), int(guardian["y"])
             sprite = v.guardian(guardian["tipo"], T-3)
             superficie.blit(sprite, (gx*T+1, gy*T))
-            v.barra_salud(superficie, guardian, gx*T+3, (gy+1)*T-5, T-6)
 
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
@@ -436,7 +424,6 @@ class PantallaArena(Pantalla):
         v.rotulo(superficie, valor, (x, 122), 27, v.TEXT, True)
         aviso = "Energía extraída" if pygame.time.get_ticks() < self._aviso_hasta else (juego or {}).get("message", "Esperando")
         v.lineas(superficie, aviso, pygame.Rect(x,158,self.ANCHO_PANEL-28,39), luz)
-        v.barra_salud(superficie, local, x+75, 74, 110)
         v.rotulo(superficie, "MARCADOR", (x, 198), 12, v.MUTED, True)
         if juego:
             jugadores = juego.get("players", [])
@@ -446,7 +433,6 @@ class PantallaArena(Pantalla):
                 superficie.blit(self._avatar(jugador["user_id"], 26), (x, y))
                 v.rotulo(superficie, jugador["username"], (x+34, y+3), 14,
                          luz if es_local else v.TEXT, es_local, self.ANCHO_PANEL-106)
-                v.barra_salud(superficie, jugador, x+34, y+24, 90)
                 puntos = v.fuente(17, True).render(str(jugador["score"]), True, v.TEXT)
                 superficie.blit(puntos, puntos.get_rect(topright=(x0+self.ANCHO_PANEL-14,y)))
             jugador_local = next(
@@ -493,6 +479,4 @@ class PantallaArena(Pantalla):
             self.texto(superficie, "ESC: salir", (x, superficie.get_height() - 24))
         if self.mensaje:
             v.lineas(superficie, self.mensaje, pygame.Rect(x, 385, self.ANCHO_PANEL-28, 64), self.color_mensaje)
-        if local and "salud" not in local:
-            v.rotulo(superficie, "Salud · sin dato del servidor", (x, 378), 11, v.MUTED)
         self.dibujar_botones(superficie)
