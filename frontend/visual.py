@@ -101,3 +101,10 @@ def sprite_trampa(tipo, tam):
     nombre = tipo if tipo in ("jaula", "arenas_movedizas", "campo_electrico") else "jaula"
     ruta = Path(__file__).resolve().parents[1] / "Media" / "trampas" / (nombre + ".png")
     return pygame.transform.smoothscale(pygame.image.load(str(ruta)), (tam, tam))
+
+
+@lru_cache(maxsize=4)
+def sprite_puerta(abierta, tam):
+    nombre = "abierta.png" if abierta else "cerrada.png"
+    ruta = Path(__file__).resolve().parents[1] / "Media" / "puertas" / nombre
+    return pygame.transform.smoothscale(pygame.image.load(str(ruta)), (tam, tam))

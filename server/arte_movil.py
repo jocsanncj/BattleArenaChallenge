@@ -52,6 +52,13 @@ def imagen_guardian(tipo):
     return send_from_directory(GUARDIANES, tipo + ".png")
 
 
+@arte_movil.get("/movil/arena/puertas/<estado>.png")
+def imagen_puerta(estado):
+    if estado not in ("abierta", "cerrada"):
+        abort(404)
+    return send_from_directory(Path(__file__).resolve().parents[1] / "Media" / "puertas", estado + ".png")
+
+
 @arte_movil.get("/movil/arena/trampas/<tipo>.png")
 def imagen_trampa(tipo):
     if tipo not in TIPOS_TRAMPA:
@@ -76,6 +83,8 @@ def catalogo_arte_arena():
             for i, mapa in enumerate(MAPAS)
         ],
         "coloresLuz": ["#%02x%02x%02x" % paleta[-1] for paleta in PALETAS],
+        "puertas": {estado: url_for("arte_movil.imagen_puerta", estado=estado)
+                    for estado in ("abierta", "cerrada")},
         "trampas": {tipo: url_for("arte_movil.imagen_trampa", tipo=tipo) for tipo in TIPOS_TRAMPA},
         "guardianes": {tipo: url_for("arte_movil.imagen_guardian", tipo=tipo)
                       for tipo in TIPOS_GUARDIAN},

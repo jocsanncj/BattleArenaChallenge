@@ -212,12 +212,8 @@ class PantallaArena(Pantalla):
 
         obstaculos = juego.get("obstaculos", {})
         for puerta in obstaculos.get("puertas", []):
-            rect = pygame.Rect(puerta["x"] * T + 3, puerta["y"] * T + 3, T - 6, T - 6)
-            color = (55, 205, 115) if puerta.get("abierta") else (220, 65, 65)
-            pygame.draw.rect(superficie, color, rect, border_radius=5)
-            pygame.draw.rect(superficie, (245, 245, 245), rect, 2, border_radius=5)
-            marca = pygame.font.Font(None, 20).render("P", True, (255, 255, 255))
-            superficie.blit(marca, marca.get_rect(center=rect.center))
+            sprite = v.sprite_puerta(bool(puerta.get("abierta")), T - 2)
+            superficie.blit(sprite, (puerta["x"] * T + 1, puerta["y"] * T + 1))
         for trampa in obstaculos.get("trampas", []):
             if trampa.get("activa", True):
                 sprite = v.sprite_trampa(trampa["tipo"], T - 2)

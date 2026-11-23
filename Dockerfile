@@ -16,6 +16,7 @@ COPY shared /app/shared
 COPY Media/escenarios.json /app/Media/escenarios.json
 COPY Media/retratos/ /app/Media/retratos/
 COPY Media/personajes/ /app/Media/personajes/
+COPY Media/puertas/ /app/Media/puertas/
 COPY Media/trampas/ /app/Media/trampas/
 COPY Media/guardianes/ /app/Media/guardianes/
 COPY Media/Orbital.wav /app/Media/Orbital.wav

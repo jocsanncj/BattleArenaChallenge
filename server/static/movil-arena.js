@@ -162,7 +162,9 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (const puerta of juego.obstaculos?.puertas || []) {
-      marca(puerta, "P", puerta.abierta ? "#37cd73" : "#dc4141", true);
+      const sprite = imagen(arte.puertas[puerta.abierta ? "abierta" : "cerrada"]);
+      if (sprite) ctx.drawImage(sprite, puerta.x * lado + 1, puerta.y * lado + 1, lado - 2, lado - 2);
+      else marca(puerta, "", puerta.abierta ? "#37cd73" : "#dc4141", true);
     }
     for (const trampa of juego.obstaculos?.trampas || []) {
       if (trampa.activa === false) continue;
