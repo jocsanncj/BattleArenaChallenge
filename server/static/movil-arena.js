@@ -1,10 +1,5 @@
 // El servidor genera el fondo con el mismo dibujo de Pygame que usa el escritorio.
 // Sobre él, US30 coloca únicamente las entidades confirmadas por /api/game/state.
-const trampas = {
-  jaula: ["J", "#e6b437"],
-  arenas_movedizas: ["A", "#a57341"],
-  campo_electrico: ["E", "#a05ae6"],
-};
 const estadosReactor = {
   disponible: ["#3cdce6", "REACTOR DISPONIBLE"],
   ocupado: ["#ffaa3c", "REACTOR OCUPADO"],
@@ -48,7 +43,7 @@ export function crearRenderArena(canvas, urlJugador) {
   }
 
   // Toma la fila y la columna de la entidad. Sumar media casilla sitúa el texto en el centro.
-  // Las puertas usan un cuadrado y las trampas y la energía usan un círculo con su símbolo.
+  // Las puertas usan un cuadrado y la energía usa un círculo con su símbolo.
   function marca(entidad, texto, color, cuadrada = false) {
     const x = (entidad.x + .5) * lado, y = (entidad.y + .5) * lado;
     const radio = lado / 2 - 3;
@@ -67,23 +62,12 @@ export function crearRenderArena(canvas, urlJugador) {
   }
 
   // Lee el tipo y la posición del guardián recibidos del servidor para elegir la figura y su casilla.
-  // Si falta la figura se ve una G. Si falta la salud se dibujan rayas en la barra para distinguir
-  // el dato desconocido de una salud igual a cero.
   function dibujarGuardian(guardian) {
     const sprite = imagen(arte.guardianes[guardian.tipo]);
     if (!sprite) { marca(guardian, "G", "#a74751"); return; }
     const x = guardian.x * lado, y = guardian.y * lado;
     ctx.drawImage(sprite, x + 1, y, lado - 3, lado - 3);
-    const ancho = lado - 6;
-    ctx.fillStyle = "#474f5d";
-    ctx.fillRect(x + 3, y + lado - 5, ancho, 3);
-    if (Number.isFinite(guardian.salud) && guardian.salud_maxima > 0) {
-      ctx.fillStyle = "#66e29f";
-      ctx.fillRect(x + 3, y + lado - 5, ancho * Math.max(0, Math.min(1, guardian.salud / guardian.salud_maxima)), 3);
-    } else {
-      ctx.fillStyle = "#7e8692";
-      for (let i = 1; i < ancho - 1; i += 7) ctx.fillRect(x + 3 + i, y + lado - 4, 2, 2);
-    }
+
   }
 
   // El catálogo del mapa fija el centro del reactor. juego.reactor determina el color y la etiqueta,
@@ -181,7 +165,10 @@ export function crearRenderArena(canvas, urlJugador) {
       marca(puerta, "P", puerta.abierta ? "#37cd73" : "#dc4141", true);
     }
     for (const trampa of juego.obstaculos?.trampas || []) {
-      if (trampa.activa !== false) marca(trampa, ...(trampas[trampa.tipo] || ["!", "#e65a5a"]));
+      if (trampa.activa === false) continue;
+      const sprite = imagen(arte.trampas[trampa.tipo] || arte.trampas.jaula);
+      if (sprite) ctx.drawImage(sprite, trampa.x * lado + 1, trampa.y * lado + 1, lado - 2, lado - 2);
+      else marca(trampa, "", "#c7873d");
     }
     if (juego.energia_adicional) marca(juego.energia_adicional, "+", "#ffdc46");
     for (const guardian of juego.guardianes || []) dibujarGuardian(guardian);

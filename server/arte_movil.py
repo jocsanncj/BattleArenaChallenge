@@ -15,6 +15,7 @@ from shared.escenarios import MAPAS
 arte_movil = Blueprint("arte_movil", __name__)
 GUARDIANES = Path(__file__).resolve().parents[1] / "Media" / "guardianes"
 TIPOS_GUARDIAN = ("perseguidor", "vigilante")
+TIPOS_TRAMPA = ("jaula", "arenas_movedizas", "campo_electrico")
 LADO = 36
 
 
@@ -51,6 +52,13 @@ def imagen_guardian(tipo):
     return send_from_directory(GUARDIANES, tipo + ".png")
 
 
+@arte_movil.get("/movil/arena/trampas/<tipo>.png")
+def imagen_trampa(tipo):
+    if tipo not in TIPOS_TRAMPA:
+        abort(404)
+    return send_from_directory(Path(__file__).resolve().parents[1] / "Media" / "trampas", tipo + ".png")
+
+
 # La plantilla de /movil llama a esta función y entrega el diccionario como JSON en arte-arena. El lienzo
 # usa el tamaño de casilla, el centro del reactor y las URL por escenario y tema para dibujar a escala.
 @arte_movil.app_template_global()
@@ -68,6 +76,7 @@ def catalogo_arte_arena():
             for i, mapa in enumerate(MAPAS)
         ],
         "coloresLuz": ["#%02x%02x%02x" % paleta[-1] for paleta in PALETAS],
+        "trampas": {tipo: url_for("arte_movil.imagen_trampa", tipo=tipo) for tipo in TIPOS_TRAMPA},
         "guardianes": {tipo: url_for("arte_movil.imagen_guardian", tipo=tipo)
                       for tipo in TIPOS_GUARDIAN},
     }
