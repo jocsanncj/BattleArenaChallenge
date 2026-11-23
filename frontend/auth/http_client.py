@@ -31,6 +31,7 @@ CODIGOS_CREDENCIALES = {"INVALID_PASSWORD", "INVALID_LOGIN_CREDENTIALS", "EMAIL_
 # ------------------------------------------------------------- HTTP común
 class _ErrorHttp(Exception):
     """Respuesta HTTP de error; guarda el cuerpo JSON para que lo interprete el adaptador."""
+    # Guarda por separado el estado HTTP y el JSON de error. El cliente usa el 404 de /api/profile para reconocer un primer ingreso.
     def __init__(self, cuerpo: dict, estado: int):
         super().__init__("error HTTP")
         self.cuerpo = cuerpo
@@ -49,6 +50,7 @@ def _enviar(request: Request, timeout: int = 15) -> dict:
         with urlopen(request, timeout=timeout) as respuesta:
             datos = respuesta.read()
     except HTTPError as error:
+        # Conserva el código HTTP para que el cliente pueda reconocer el 404 de un perfil nuevo.
         raise _ErrorHttp(_json(error.read()), error.code) from error
     except (URLError, TimeoutError, OSError) as error:
         raise AuthError(f"No se pudo conectar con el servicio: {error}") from error
@@ -90,6 +92,8 @@ class FirebaseAuth:
 
     def iniciar_sesion_google(self, credencial: str) -> dict:
         """Canjea la credencial de Google por los tokens de Firebase que usa la API del juego."""
+        # Firebase espera el proveedor y el access token en postBody. La respuesta aporta un idToken para el servidor del juego
+        # y un refreshToken para renovar el acceso sin volver a abrir el navegador.
         return self._llamar("signInWithIdp", {
             "requestUri": "http://localhost",
             "postBody": urlencode({"providerId": "google.com", "access_token": credencial}),
@@ -121,6 +125,8 @@ class ClienteServidor:
     """Adaptador del servidor del juego (implementa ApiPerfiles)."""
     def __init__(self, url: str | None = None):
         self.url = (url or os.getenv("BATTLE_ARENA_SERVER", "http://127.0.0.1:8000")).rstrip("/")
+    # Añade el token de Firebase como cabecera Bearer cuando la ruta lo necesita. Los datos de entrada viajan como JSON;
+    # el servicio recibe el JSON de respuesta o una excepción cuyo tipo distingue un perfil inexistente.
     def _llamar(self, metodo, ruta, token=None, cuerpo=None, **params) -> dict:
         url = self.url + ruta + (f"?{urlencode(params)}" if params else "")
         cabeceras = {"Accept": "application/json"}

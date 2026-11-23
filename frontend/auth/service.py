@@ -23,6 +23,7 @@ from .http_client import (
 class ProveedorIdentidad(Protocol):
     def registrar(self, correo: str, password: str) -> dict: ...
     def iniciar_sesion(self, correo: str, password: str) -> dict: ...
+    # El adaptador recibe el access token de Google. El servicio espera en la respuesta el UID, el correo y los tokens de Firebase.
     def iniciar_sesion_google(self, credencial: str) -> dict: ...
     def renovar(self, refresh_token: str) -> dict: ...
     def datos_cuenta(self, id_token: str) -> dict: ...
@@ -120,6 +121,8 @@ class ServicioAuth:
 
     def preparar_acceso_google(self, credencial: str) -> tuple[Sesion, dict]:
         """Verifica el acceso y carga el perfil antes de activar la sesión del juego."""
+        # El servidor local de la pestaña llama aquí con accessToken. El idToken obtenido autoriza la consulta a /api/profile;
+        # refreshToken permite renovar esa sesión más adelante. El menú todavía puede cancelar este intento.
         respuesta = self._identidad.iniciar_sesion_google(credencial)
         # Firebase pide confirmación cuando el correo ya está asociado a otra credencial.
         # El jugador debe volver a entrar con el método original para conservar su cuenta.
@@ -137,7 +140,8 @@ class ServicioAuth:
         try:
             perfil = self._servidor.obtener_perfil(token)
         except PerfilNoEncontrado:
-            # En el primer acceso, escritorio y móvil usan la misma regla para nombrar el perfil de US04.
+            # Solo un 404 entra en esta rama. El UID distingue a dos jugadores con el mismo nombre visible;
+            # un error de conexión llega al menú para que se pueda reintentar sin crear un perfil por error.
             nombre = nombre_jugador_google(uid, correo, respuesta.get("displayName"))
             perfil = self._servidor.guardar_perfil(token, nombre)
 
@@ -147,6 +151,8 @@ class ServicioAuth:
         # El menú activa esta sesión al recoger el resultado del intento que sigue abierto en Pygame.
         return Sesion(token, refresh, correo, nombre_perfil), perfil
 
+    # La pantalla llama aquí tras comprobar que sigue esperando ese intento. Desde ese momento, el perfil y la sala
+    # pueden usar los tokens de la misma sesión que usarían con el acceso por correo.
     def activar_acceso_google(self, sesion: Sesion) -> None:
         self._sesion = sesion
 

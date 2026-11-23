@@ -13,6 +13,8 @@ from frontend.auth import google_web, service
 class GoogleLoginTests(unittest.TestCase):
     origen = "http://localhost:8765"
 
+    # Abre un intento en el menú de prueba con un puerto fijo y un navegador simulado. Cada caso obtiene una clave nueva
+    # y puede reproducir la respuesta de la pestaña con el cliente HTTP de Flask.
     def setUp(self):
         if not pygame.font.get_init():
             pygame.font.init()
@@ -32,6 +34,7 @@ class GoogleLoginTests(unittest.TestCase):
         self.clave = self.escena.intento_google.clave
         self.cliente = google_web.app.test_client()
 
+    # Envía al servidor local la acción de la pestaña y sus datos. Origin y X-Intento reproducen las dos comprobaciones del flujo real.
     def _enviar(self, accion, datos=None):
         return self.cliente.post(
             f"/login/google/{accion}",
@@ -40,6 +43,7 @@ class GoogleLoginTests(unittest.TestCase):
             json=datos,
         )
 
+    # El primer POST obtiene 204 y el siguiente fotograma vuelve al login. Repetir la cancelación con la clave anterior debe dar 409.
     def test_cancelar_descarta_el_intento_y_su_clave(self):
         self.assertEqual(self._enviar("cancelar").status_code, 204)
 
@@ -51,6 +55,8 @@ class GoogleLoginTests(unittest.TestCase):
         self.assertIsNone(service.usuario_actual())
         self.assertEqual(self._enviar("cancelar").status_code, 409)
 
+    # El código de Firebase se convierte en un mensaje del menú. Tras reintentar, un fallo que llegue con la clave antigua
+    # debe recibir 409 y dejar vigente el intento nuevo.
     def test_error_de_firebase_aparece_en_el_juego_y_permite_reintentar(self):
         respuesta = self._enviar("fallar", {"codigo": "auth/operation-not-allowed"})
         self.assertEqual(respuesta.status_code, 200)
@@ -64,6 +70,8 @@ class GoogleLoginTests(unittest.TestCase):
         self.assertNotEqual(self.escena.intento_google.clave, self.clave)
         self.assertEqual(self._enviar("fallar", {"codigo": "auth/popup-blocked"}).status_code, 409)
 
+    # Se simula una sesión válida. El POST devuelve 204 mientras usuario_actual() sigue vacío; después de update(),
+    # el perfil aparece en el menú. Así se verifica qué parte del flujo activa la sesión.
     def test_acceso_verificado_activa_el_perfil_en_el_siguiente_fotograma(self):
         sesion = service.Sesion("id-de-prueba", "refresh-de-prueba", "jugador@example.test", "Jugador")
         perfil = {"name": "Jugador"}

@@ -14,6 +14,8 @@ from shared.domain import ServicioPartida
 
 
 class GameServerIntegrationTests(unittest.TestCase):
+    # Cada prueba arranca con clientes Flask, una base temporal y una caché de resultados vacía. Así un podio anterior
+    # solo aparece en los casos que realmente han disputado esa partida.
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         cache = patch.object(servidor, "_RESULTADOS_RECIENTES", {})
@@ -77,10 +79,13 @@ class GameServerIntegrationTests(unittest.TestCase):
     def _headers(token):
         return {"Authorization": f"Bearer {token}"}
 
+    # Lee el catálogo enviado a /movil y descarga cada retrato y personaje. Sus bytes deben coincidir con el PNG del escritorio;
+    # un identificador desconocido debe devolver 404.
     def test_mobile_catalog_serves_desktop_portraits_and_sprites(self):
         from flask import template_rendered
 
         contexts = []
+        # Recoge los datos que Flask pasa a la plantilla para poder comprobar el catálogo mostrado.
         def capture(_app, template, context, **extra):
             contexts.append(context)
 
@@ -98,6 +103,8 @@ class GameServerIntegrationTests(unittest.TestCase):
                         self.assertEqual(response.data, (personajes.MEDIA / folder / (avatar["id"] + ".png")).read_bytes())
         self.assertEqual(self.client_one.get("/movil/avatares/retratos/desconocido.png").status_code, 404)
 
+    # Dos clientes eligen un avatar del catálogo y uno personalizado. Compara sus identificadores en sala y arena
+    # y comprueba que la imagen personalizada se obtiene por la ruta de avatar, sin incluirla en cada estado de partida.
     def test_mobile_lobby_avatar_ids_match_arena_and_keep_desktop_player_format(self):
         one, two = self._headers("token-one"), self._headers("token-two")
         self.client_one.post("/api/game/join", headers=one)
@@ -144,6 +151,8 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertEqual(perfil["avatar_selection"], personalizado)
         self.assertEqual(perfil["avatar"], "Personalizado")
 
+    # Envía el mismo nombre visible con dos UID de Google. El sufijo de cada UID distingue los perfiles;
+    # al repetir el acceso con otro nombre visible, cada cuenta debe conservar el que ya tenía en el juego.
     def test_google_crea_perfiles_distintos_y_conserva_el_nombre_al_reingresar(self):
         for uid in ("google-uno", "google-dos"):
             with self.subTest(uid=uid):
@@ -161,6 +170,8 @@ class GameServerIntegrationTests(unittest.TestCase):
                 repetida = self.client_one.post("/api/profile", json={}, headers=headers)
                 self.assertEqual(repetida.json["user"]["name"], nombre)
 
+    # Prueba el alta sin nombre con Google sin verificar y con contraseña: ambos casos devuelven 403.
+    # Después comprueba que vincular Google al mismo UID conserva el nombre elegido al registrarse.
     def test_solo_google_verificado_puede_crear_un_perfil_sin_indicar_nombre(self):
         claims = {
             "uid": "nueva-cuenta", "email": "nuevo@example.test",
@@ -415,6 +426,8 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertEqual(stopped.status_code, 200)
         self.assertEqual(stopped.json["state"]["scores"][player_id], 1)
 
+    # Consulta el estado después de terminar la partida y compara las estadísticas del perfil, el historial y el ranking.
+    # Las lecturas posteriores deben seguir reflejando una sola partida guardada.
     def test_finished_match_is_saved_once_and_returned_in_ranking_and_profile(self):
         config = {
             "modo_fin": "puntos",
@@ -497,6 +510,8 @@ class GameServerIntegrationTests(unittest.TestCase):
                 2,
             )
 
+    # Después de la victoria, sale primero el ganador. El otro cliente todavía debe ver el mismo marcador;
+    # al salir el último participante, la sala queda vacía para la partida siguiente.
     def test_finished_players_leave_independently_and_the_room_becomes_available(self):
         self._preparar_partida_reactor(target_score=1)
         uno, dos = self._headers("token-one"), self._headers("token-two")
@@ -514,6 +529,8 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertEqual(sala["partida"]["jugadores"], [])
         self.assertNotIn("resultado_anterior", sala)
 
+    # Simula que el escritorio reabre la sala antes del último sondeo móvil. El participante puede pedir el podio por match_id;
+    # otro usuario no lo recibe y una salida tardía de esa partida no desconecta a nadie de la nueva.
     def test_late_participant_can_get_previous_podium_after_next_lobby_opens(self):
         self._preparar_partida_reactor(target_score=1, tokens=("token-one", "token-three", "token-two"))
         uno, dos, ajeno = (self._headers(t) for t in ("token-one", "token-two", "token-four"))
@@ -542,6 +559,8 @@ class GameServerIntegrationTests(unittest.TestCase):
         self.assertTrue(all(j["connected"] for j in nueva["game"]["players"]))
         self.assertEqual(nueva["resultado_anterior"], podio)
 
+    # Inicia una partida con tres clientes y la termina mediante una extracción. Verifica que el estado final
+    # lleva el ganador, los puestos y los récords que reciben los participantes para mostrar la ceremonia.
     def test_three_players_receive_consolidated_podium_data_and_personal_records(self):
         clients = (
             (self.client_one, "token-one", "avatar_1"),

@@ -16,6 +16,8 @@ const erroresFirebase = {
 };
 const credencialesInvalidas = new Set(["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"]);
 
+// El formulario pasa aquí los fallos de acceso. Los códigos de Firebase distinguen una ventana cancelada, un dominio
+// sin autorizar o una cuenta bloqueada. Un HTTP 503 del juego tiene su propio aviso para indicar qué servicio falló.
 function mensajeError(error) {
   if (error.estado === 503) return "El servidor del juego todavía no puede verificar la sesión. Contacta al equipo que lo aloja.";
   if (error.code) return erroresFirebase[error.code] || "Firebase no pudo completar la solicitud. Inténtalo de nuevo.";
@@ -23,9 +25,10 @@ function mensajeError(error) {
   return error.message || "No se pudo completar la solicitud.";
 }
 
-// US30 reúne en el móvil el registro y la verificación (US01–02), el acceso
-// con usuario o correo (US03), la recuperación (US05) y Google (US29).
+// US30 conecta los formularios de registro y verificación (US01–02), contraseña (US03), recuperación (US05) y Google (US29).
+// movil.js entrega pedir para consultar la API y tres funciones para abrir la ficha, liberar la plaza y limpiar la cuenta.
 export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarCuenta }) {
+  // Busca los controles de acceso por el identificador que tienen en el HTML.
   const elemento = id => document.getElementById(id);
   const panel = elemento("autenticacion");
   const estado = elemento("estado-acceso");
@@ -38,6 +41,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
   let intentos = 0;
   let nombrePendiente = "";
 
+  // Se ejecuta al empezar o terminar una acción. Mientras ocupado sea true bloquea todos los botones de acceso y el de salir.
+  // Cuando queda libre el panel, los botones data-remoto siguen esperando a que auth esté listo.
   function controles() {
     for (const boton of panel.querySelectorAll("button")) {
       boton.disabled = ocupado || (boton.hasAttribute("data-remoto") && !auth);
@@ -45,6 +50,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     salir.disabled = ocupado;
   }
 
+  // Al abrir un formulario o reintentar, descarga los módulos de Firebase. carga guarda la promesa compartida
+  // para evitar otra descarga si se cambia de pantalla mientras llega la primera. Al terminar vuelve a evaluar los controles.
   async function conectar() {
     if (!config.apiKey) {
       estado.textContent = "El servidor todavía no tiene configurado el acceso de Firebase.";
@@ -77,6 +84,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     }
   }
 
+  // Recibe el id de la sección de destino y un mensaje opcional. Oculta las demás secciones y mueve el foco al título
+  // para que el teclado y el lector de pantalla sigan la navegación. Solo los formularios que usan Firebase inician la conexión.
   function mostrar(destino, mensaje = "") {
     vista = destino;
     for (const seccion of panel.querySelectorAll("section")) seccion.hidden = seccion.id !== destino;
@@ -86,6 +95,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     if (["acceso", "registro", "recuperacion"].includes(destino) && !auth) conectar();
   }
 
+  // Recibe una función, la ejecuta una sola vez mientras los botones están bloqueados y espera su resultado con await.
+  // Si falla, escribe en el panel visible. finally vuelve a habilitar los controles tanto en caso de éxito como de error.
   async function ejecutar(accion) {
     if (ocupado) return;
     ocupado = true;
@@ -103,6 +114,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
   }
 
   for (const boton of panel.querySelectorAll("[data-vista]")) {
+    // Cada botón lee el destino de su atributo data-vista. Al abrir recuperación copia el identificador que ya se escribió.
+    // Abandonar la verificación cierra la sesión provisional y borra el nombre pendiente antes de mostrar otro formulario.
     boton.addEventListener("click", () => ejecutar(async () => {
       if (vista === "verificacion") {
         if (auth.currentUser) await sdk.signOut(auth);
@@ -115,15 +128,21 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
       mostrar(boton.dataset.vista);
     }));
   }
+  // El botón de reintento vuelve a cargar la conexión con Firebase tras un fallo.
   reintentar.addEventListener("click", conectar);
 
+  // Al preparar la página, asocia cada id de formulario con la función que procesa sus datos. La misma conexión sirve
+  // tanto al botón de enviar como a la tecla Intro, ya que ambos generan el evento submit.
   function alEnviar(id, accion) {
+    // Intercepta el envío para procesarlo en esta página sin recargar el navegador.
     elemento(id).addEventListener("submit", evento => {
       evento.preventDefault();
       if (auth) ejecutar(accion);
     });
   }
 
+  // Login y recuperación aceptan usuario o correo. Para un nombre consulta /api/correo y URLSearchParams lo codifica para la URL.
+  // El formulario que llamó a la función decide qué mostrar si la búsqueda no trae correo.
   async function resolverCorreo(identificador) {
     const valor = identificador.trim();
     if (!valor) throw new Error("Escribe tu usuario o correo electrónico.");
@@ -131,6 +150,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     return (await pedir("/api/correo?" + new URLSearchParams({ nombre: valor }))).correo;
   }
 
+  // El formulario de contraseña llama a esta función tras un identificador desconocido o credenciales rechazadas.
+  // Al tercer fallo reinicia el contador y pasa el identificador a recuperación para que el jugador no tenga que repetirlo.
   function credencialesRechazadas() {
     intentos++;
     if (intentos < 3) {
@@ -142,9 +163,10 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     mostrar("recuperacion", "Fallaste tres veces. Puedes solicitar un enlace para recuperar tu contraseña.");
   }
 
+  // Recibe el usuario devuelto por Firebase y, para Google, la señal que permite crear un perfil en el primer ingreso.
   async function entrarAlJuego(usuario, google = false) {
-    // Los dos métodos de acceso pasan por abrirCuenta en movil.js. Allí se carga
-    // el perfil del jugador (US04) antes de abrir las vistas de cuenta y partida.
+    // abrirCuenta en movil.js recupera o crea el perfil del juego (US04). Solo al completar ese paso
+    // se oculta el formulario, se reinicia el contador de fallos y se muestra la opción de cerrar sesión.
     try {
       await abrirCuenta(usuario, google);
     } catch (error) {
@@ -160,6 +182,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     salir.focus();
   }
 
+  // Al enviar usuario o correo, Firebase comprueba la contraseña. Un correo pendiente lleva a verificación para poder reenviar el enlace.
+  // Un usuario verificado pasa a su perfil. La contraseña se borra en todos los casos al terminar.
   alEnviar("formulario", async () => {
     estado.textContent = "Iniciando sesión…";
     try {
@@ -179,6 +203,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     }
   });
 
+  // El clic abre el selector de cuentas de Google desde el navegador. Con correo verificado, user pasa a entrarAlJuego junto con true
+  // para que el servidor pueda dar de alta el perfil en el primer acceso. Si falta verificación se cierra la sesión provisional.
   elemento("google").addEventListener("click", () => ejecutar(async () => {
     const proveedor = new sdk.GoogleAuthProvider();
     proveedor.setCustomParameters({ prompt: "select_account" });
@@ -191,12 +217,16 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     await entrarAlJuego(user, true);
   }));
 
+  // Registro y reintentos de alta validan el nombre antes de enviarlo. Array.from cuenta puntos de código de Unicode
+  // y el signo @ se reserva para distinguir los correos de los nombres de jugador en el formulario de acceso.
   function validarNombre(nombre) {
     if (!nombre || nombre.includes("@") || Array.from(nombre).length > 40) {
       throw new Error("Elige un nombre de 1 a 40 caracteres sin @.");
     }
   }
 
+  // Sirve al primer registro y al reenvío. Con un nombre pendiente, actualiza el nombre visible en Firebase y guarda el perfil
+  // en el juego con el token del mismo usuario. Solo tras un guardado correcto pide enviar el enlace de verificación.
   async function enviarVerificacion() {
     const usuario = auth.currentUser;
     if (!usuario) throw new Error("Vuelve a iniciar sesión para reenviar el enlace.");
@@ -227,6 +257,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     estado.textContent = "Enlace enviado. Revisa tu correo y la carpeta de spam. Una vez verificado, vuelve a iniciar sesión.";
   }
 
+  // Antes de crear la cuenta, comprueba el nombre, las reglas de contraseña, su confirmación y la disponibilidad del nombre en la API.
+  // Una vez que Firebase acepta el correo, conserva el nombre propuesto para guardar el perfil y enviar la verificación.
   alEnviar("form-registro", async () => {
     const nombre = elemento("nombre-registro").value.trim();
     const correo = elemento("correo-registro").value.trim();
@@ -245,8 +277,11 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     mostrar("verificacion", "Cuenta creada. Preparando el enlace de verificación…");
     await enviarVerificacion();
   });
+  // Permite reenviar la verificación o completar el nombre pendiente desde la misma cuenta.
   alEnviar("form-verificacion", enviarVerificacion);
 
+  // Busca el correo y pide a Firebase el enlace de restablecimiento si lo encuentra. Una cuenta ausente recibe la misma pantalla
+  // de confirmación para que el formulario no revele qué cuentas existen. Los demás fallos vuelven al panel de errores.
   alEnviar("form-recuperacion", async () => {
     const correo = await resolverCorreo(elemento("cuenta-recuperacion").value);
     if (correo) {
@@ -259,6 +294,8 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     mostrar("recuperacion-enviada");
   });
 
+  // Primero intenta liberar la plaza mientras la cuenta aún tiene un token válido. Luego cierra Firebase, borra los datos locales
+  // y regresa a la bienvenida. Si no pudo confirmar la salida de la sala, la despedida lo indica al jugador.
   salir.addEventListener("click", () => ejecutar(async () => {
     const salaLiberada = await salirDePartida();
     await sdk.signOut(auth);

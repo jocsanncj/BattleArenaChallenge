@@ -23,6 +23,7 @@ _servidor: BaseWSGIServer | None = None
 
 @dataclass
 class IntentoGoogle:
+    # Una clave nueva distingue esta pestaña de las anteriores. El menú consulta cancelado y resultado en cada fotograma.
     clave: str = field(default_factory=lambda: secrets.token_urlsafe(32), repr=False)
     cancelado: Event = field(default_factory=Event)
     resultado: Future[tuple[Sesion, dict]] = field(default_factory=Future, repr=False)
@@ -40,6 +41,8 @@ _MENSAJES_ERROR = {
 }
 
 
+# La pestaña abierta por Pygame solicita este HTML. La plantilla recibe los datos públicos para iniciar Firebase en el navegador.
+# Si falta la API key se responde 503 y el jugador ve qué configuración necesita el equipo.
 @app.get("/login/google")
 def login_google():
     config = configuracion_firebase_web()
@@ -50,6 +53,8 @@ def login_google():
 
 def _intento_validado() -> IntentoGoogle:
     """Vincula la respuesta del navegador con el intento abierto desde Pygame."""
+    # Las tres acciones de la pestaña pasan por aquí. Host y Origin deben coincidir con el puerto local abierto por el juego.
+    # X-Intento identifica la pestaña vigente; una respuesta de un acceso anterior se rechaza con 409.
     intento = _intento_actual
     if _servidor is None or intento is None:
         abort(409)
@@ -62,6 +67,7 @@ def _intento_validado() -> IntentoGoogle:
     return intento
 
 
+# El botón de cancelar marca un Event que el menú leerá en update(). El 204 confirma a la pestaña que el aviso llegó.
 @app.post("/login/google/cancelar")
 def cancelar_login_google():
     intento = _intento_validado()
@@ -71,6 +77,8 @@ def cancelar_login_google():
     return "", 204
 
 
+# Recibe el código de Firebase, elige un aviso comprensible y lo guarda como excepción en el Future del intento.
+# La pestaña recibe el mensaje en JSON y Pygame puede mostrar ese mismo fallo al consultar el Future.
 @app.post("/login/google/fallar")
 def fallar_login_google():
     intento = _intento_validado()
@@ -85,6 +93,8 @@ def fallar_login_google():
     return jsonify(error=mensaje)
 
 
+# El navegador envía accessToken. El servicio lo canjea y recupera el perfil; el Future guarda ambos datos para el próximo update().
+# Si durante la consulta se abre otra pestaña, la comparación final impide entregar el resultado al intento nuevo.
 @app.post("/login/google/completar")
 def completar_login_google():
     intento = _intento_validado()
@@ -107,6 +117,8 @@ def completar_login_google():
     return "", 204
 
 
+# Al salir de la pantalla o cambiar de método, deja de aceptar respuestas de ese intento. Comprueba su identidad
+# antes de borrar la referencia porque la pestaña que terminó puede ser anterior a la que sigue abierta.
 def descartar_login_google(intento: IntentoGoogle | None) -> None:
     global _intento_actual
     if intento is _intento_actual:
@@ -116,6 +128,8 @@ def descartar_login_google(intento: IntentoGoogle | None) -> None:
 def abrir_login_google() -> IntentoGoogle | None:
     """Abre la página en el navegador sin bloquear el bucle de Pygame."""
     global _servidor, _intento_actual
+    # La primera entrada crea un servidor de retorno en un puerto local libre. El hilo atiende al navegador mientras Pygame dibuja.
+    # Las siguientes entradas reutilizan el servidor, pero cada una abre un intento con su propia clave.
     if _servidor is None:
         _servidor = make_server("127.0.0.1", 0, app)
         Thread(target=_servidor.serve_forever, daemon=True).start()

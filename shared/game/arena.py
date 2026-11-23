@@ -118,6 +118,8 @@ class MultiplayerArena:
 
     def connected_player_ids(self) -> set[str]:
         """Da las conexiones actuales incluso después de congelar el resultado final."""
+        # Copia los ID de jugador bajo el bloqueo, incluso cuando el podio ya se guardó. El servidor usa
+        # este conjunto para actualizar connected y saber cuándo el último participante dejó la sala.
         with self._lock:
             return set(self._connections.values())
 

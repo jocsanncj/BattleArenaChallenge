@@ -1,4 +1,7 @@
 // Escritorio y móvil guardan las reglas en la misma sala. El servidor valida el rol de creador.
+// movil.js proporciona tres funciones. pedir envía solicitudes a la API, jugadorActual identifica
+// la cuenta abierta y actualizar solicita el estado de la sala tras guardar. El objeto devuelto
+// permite ajustar la edición cada vez que llega un estado de partida.
 export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
   const panel = document.getElementById("opciones-configuracion");
   const form = document.getElementById("form-configuracion");
@@ -10,6 +13,8 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
   let reglas;
   let peticion;
 
+  // Al abrir el formulario o cambiar el modo de fin se muestra solo el límite elegido. El otro campo
+  // queda deshabilitado. Al guardar se conserva su valor anterior por si la sala vuelve a ese modo.
   function mostrarLimite() {
     const porTiempo = campos.modo_fin.value === "tiempo";
     document.getElementById("cfg-limite-tiempo").hidden = !porTiempo;
@@ -18,11 +23,15 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
     campos.puntos_fin.disabled = porTiempo;
   }
 
+  // Cierra el formulario y cambia aria-expanded para que los lectores de pantalla anuncien el panel cerrado.
+  // Cerrar solo modifica la interfaz del móvil.
   function cerrar() {
     form.hidden = true;
     editar.setAttribute("aria-expanded", "false");
   }
 
+  // Al abrir el editor copia la última configuración confirmada en los campos. La opción «aleatorio»
+  // representa la rotación de escenarios y el foco pasa al modo de fin para poder editar con el teclado.
   editar.addEventListener("click", () => {
     if (!form.hidden) {
       cerrar();
@@ -39,8 +48,12 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
     campos.modo_fin.focus();
   });
   campos.modo_fin.addEventListener("change", mostrarLimite);
+  // Cancelar descarta la edición visible y devuelve el foco a Editar. Al reabrir se leerán otra vez las reglas de la sala.
   cancelar.addEventListener("click", () => { cerrar(); editar.focus(); });
 
+  // Al pulsar Guardar, el formulario intercepta submit para que la página siga abierta. Reúne los
+  // valores de los campos y los envía por PUT a /api/game/config con el token de quien edita. El servidor comprueba
+  // el permiso de creador. Tras una respuesta válida se cierra el editor y se vuelve a consultar la sala.
   form.addEventListener("submit", async evento => {
     evento.preventDefault();
     const jugador = jugadorActual();
@@ -54,6 +67,8 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
       escenario: rotacion ? (reglas.escenario ?? 0) : Number(campos.escenario.value),
       rotacion,
     };
+    // Guardar conserva el identificador de esta solicitud para bloquear envíos duplicados. La señal
+    // de AbortController permite dejar de esperar su respuesta si cambia el creador o el estado de la sala.
     const solicitud = new AbortController();
     peticion = solicitud;
     guardar.disabled = editar.disabled = cancelar.disabled = true;
@@ -82,6 +97,9 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
   });
 
   return {
+    // Cada respuesta de la sala trae sus jugadores y su estado. Mientras espera, el primer jugador es el creador.
+    // Solo si coincide con idActual se muestra la edición. Si pierde el permiso, se cancela la espera de la
+    // solicitud en el navegador, se cierra el formulario y se limpian sus avisos.
     sincronizar(partida, idActual) {
       const creador = idActual != null && partida?.estado === "esperando"
         && partida.jugadores?.[0]?.id_usuario === idActual;

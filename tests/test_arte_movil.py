@@ -10,6 +10,8 @@ from shared.escenarios import MAPAS
 
 
 class ArteMovilTests(unittest.TestCase):
+    # Para cada mapa y paleta, compara el PNG servido al teléfono con los mismos píxeles de tablero y reactor dibujados por Pygame.
+    # Repite el GET con el ETag inicial: un 304 permite al navegador conservar su imagen sin descargar otra copia.
     def test_rotacion_mantiene_el_mapa_y_cambia_la_paleta_como_en_escritorio(self):
         app = Flask(__name__)
         app.register_blueprint(arte_movil)

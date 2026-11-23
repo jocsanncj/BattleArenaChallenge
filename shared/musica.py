@@ -11,6 +11,8 @@ def make_celebration_pcm(sample_rate: int = 22050, channels: int = 2) -> bytes:
     """
     Sintetiza una melodía original de ocho segundos con acordes y bajo, sin descargar archivos de música.
     """
+    # El escritorio pasa la frecuencia y el número de canales de su mezclador. Para el móvil se genera un
+    # solo canal. Ambos reciben muestras PCM de 16 bits que representan la misma melodía.
     if sample_rate <= 0 or channels not in {1, 2}:
         raise ValueError("La frecuencia de muestreo debe ser positiva y el número de canales debe ser 1 o 2.")
     notes = [72, 76, 79, 84, 79, 76, 74, 79,
@@ -20,6 +22,8 @@ def make_celebration_pcm(sample_rate: int = 22050, channels: int = 2) -> bytes:
     roots = [48, 45, 41, 43]
     pcm = array("h")
 
+    # A partir del número de nota calcula las oscilaciones por segundo. La nota 69 equivale a 440 Hz
+    # y una octava (12 notas) duplica la frecuencia. Se usa tanto para la melodía como para el acompañamiento.
     def frequency(note):
         return 440 * 2 ** ((note - 69) / 12)
 
@@ -48,6 +52,8 @@ def make_celebration_pcm(sample_rate: int = 22050, channels: int = 2) -> bytes:
 @lru_cache(maxsize=1)
 def wav_celebracion() -> bytes:
     """Envuelve la misma melodía PCM en un WAV mono que el navegador puede reproducir."""
+    # La cabecera WAV indica que las muestras usan un canal, dos bytes por muestra y una frecuencia de 22 050 Hz.
+    # La caché permite que /movil/audio/resultados.wav entregue los mismos bytes en cada solicitud.
     sample_rate = 22050
     salida = BytesIO()
     with wave.open(salida, "wb") as wav:

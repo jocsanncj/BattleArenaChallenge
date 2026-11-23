@@ -219,6 +219,8 @@ def _validated_result(result: dict) -> dict:
     if (isinstance(duration, bool) or not isinstance(duration, (int, float))
             or not math.isfinite(duration) or duration < 0):
         raise ValueError("La duración final de la partida no es válida.")
+    # Con el ganador y los puntajes ya validados, podio_final asigna los puestos con la regla compartida.
+    # El escritorio y la pantalla móvil pueden así mostrar el mismo orden cuando dos participantes tienen igual puntaje.
     return dict(result, players=podio_final(normalized), duration_seconds=int(round(duration)))
 
 

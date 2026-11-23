@@ -10,6 +10,8 @@ import math
 
 def podio_final(jugadores: list[dict]) -> list[dict]:
     """Ordena el podio por puntos y desempata los puestos restantes por nombre."""
+    # Servidor y escritorio pasan las fichas con su puntaje final. Cada copia recibe position desde 1.
+    # El nombre ordena a quienes comparten puntaje. La regla de victoria ya determinó el winner_id.
     ordenados = sorted(jugadores, key=lambda j: (-j["score"], j["username"].casefold()))
     return [dict(jugador, position=puesto) for puesto, jugador in enumerate(ordenados, 1)]
 

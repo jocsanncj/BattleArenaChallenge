@@ -12,6 +12,9 @@ const estadosReactor = {
   sobrecargado: ["#e64141", "REACTOR SOBRECARGADO"],
 };
 
+// movil.js llama a esta función al abrir la página. canvas es la superficie de dibujo y urlJugador
+// es la función que busca la imagen de cada personaje. El catálogo de Flask indica cuántos píxeles
+// ocupa cada casilla. El objeto devuelto permite dibujar un estado nuevo o repintar el último.
 export function crearRenderArena(canvas, urlJugador) {
   const arte = JSON.parse(document.getElementById("arte-arena").textContent);
   const lado = arte.lado;
@@ -19,12 +22,14 @@ export function crearRenderArena(canvas, urlJugador) {
   const imagenes = new Map();
   let escena;
 
+  // Busca la URL en imagenes, un Map que conserva un objeto Image por dirección. La primera llamada
+  // inicia la descarga. Devuelve la imagen solo cuando tiene anchura y ha terminado de cargar.
   function imagen(url) {
     if (!url) return;
     if (!imagenes.has(url)) {
       const sprite = new Image();
       imagenes.set(url, sprite);
-      // Puede haber llegado otro estado mientras se descargaba la imagen.
+      // onload llama a repintar con la escena más reciente, aunque el jugador se haya movido durante la descarga.
       sprite.onload = repintar;
       sprite.src = url;
     }
@@ -32,6 +37,8 @@ export function crearRenderArena(canvas, urlJugador) {
     return sprite.complete && sprite.naturalWidth ? sprite : undefined;
   }
 
+  // Dibuja un borde circular en coordenadas de píxeles. El color y el grosor distinguen al jugador
+  // local, los estados temporales y el reactor sin tapar la figura que está debajo.
   function aro(x, y, radio, color, grosor) {
     ctx.beginPath();
     ctx.arc(x, y, radio, 0, 2 * Math.PI);
@@ -40,6 +47,8 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.stroke();
   }
 
+  // Toma la fila y la columna de la entidad. Sumar media casilla sitúa el texto en el centro.
+  // Las puertas usan un cuadrado y las trampas y la energía usan un círculo con su símbolo.
   function marca(entidad, texto, color, cuadrada = false) {
     const x = (entidad.x + .5) * lado, y = (entidad.y + .5) * lado;
     const radio = lado / 2 - 3;
@@ -57,6 +66,9 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.fillText(texto, x, y);
   }
 
+  // Lee el tipo y la posición del guardián recibidos del servidor para elegir la figura y su casilla.
+  // Si falta la figura se ve una G. Si falta la salud se dibujan rayas en la barra para distinguir
+  // el dato desconocido de una salud igual a cero.
   function dibujarGuardian(guardian) {
     const sprite = imagen(arte.guardianes[guardian.tipo]);
     if (!sprite) { marca(guardian, "G", "#a74751"); return; }
@@ -74,6 +86,9 @@ export function crearRenderArena(canvas, urlJugador) {
     }
   }
 
+  // El catálogo del mapa fija el centro del reactor. juego.reactor determina el color y la etiqueta,
+  // y remaining_seconds da el tiempo de recarga. El tiempo de partida solo orienta los arcos
+  // de luz en el dibujo. La disponibilidad para extraer energía la decide el servidor.
   function dibujarReactor(mapaArte, tema, juego) {
     const [columna, fila] = mapaArte.centro;
     const x = (columna + .5) * lado, y = (fila + .5) * lado;
@@ -100,8 +115,13 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.fillText(etiqueta, x, base);
   }
 
+  // Recibe la lista de jugadores que envía la API e idPropio, el identificador de quien usa el móvil.
+  // Primero pinta las figuras y guarda la posición de los nombres. Dibuja el texto al final
+  // para que los personajes vecinos no lo tapen.
   function dibujarJugadores(jugadores, idPropio) {
     const etiquetas = [];
+    // forEach pasa cada jugador y su índice. El índice permite mostrar un número mientras carga
+    // su imagen. Los aros indican si está inmovilizado o congelado y cuál es el jugador local.
     jugadores.forEach((jugador, i) => {
       if (jugador.connected === false) return;
       const x = jugador.x * lado, y = jugador.y * lado;
@@ -119,6 +139,8 @@ export function crearRenderArena(canvas, urlJugador) {
       const mitad = ctx.measureText(texto).width / 2 + 2;
       const centro = Math.max(mitad, Math.min(canvas.width - mitad, cx));
       let base = Math.max(10, y - 10);
+      // some devuelve true con la primera etiqueta que ocuparía el mismo espacio. En ese caso
+      // se intenta colocar el nombre debajo del personaje.
       if (etiquetas.some(e => Math.abs(e.x - centro) < e.mitad + mitad && Math.abs(e.y - base) < 18)) {
         base = Math.min(canvas.height - 10, y + lado + 10);
       }
@@ -127,9 +149,12 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.strokeStyle = "#142333";
     ctx.fillStyle = "#f0f5f7";
     ctx.lineWidth = 3;
+    // Dibuja el contorno y luego el texto de cada nombre en la posición reservada.
     etiquetas.forEach(e => { ctx.strokeText(e.texto, e.x, e.y); ctx.fillText(e.texto, e.x, e.y); });
   }
 
+  // Redibuja el último estado recibido, tanto al cambiar el juego como al terminar de cargar una imagen.
+  // Coloca el fondo y luego los objetos, guardianes, reactor y jugadores en ese orden.
   function repintar() {
     if (!ctx || !escena) return;
     const { mapa, juego, mapaArte, tema, idPropio } = escena;
@@ -140,6 +165,8 @@ export function crearRenderArena(canvas, urlJugador) {
       const colores = { "#": "#25536f", X: "#5499b1", R: "#294f60" };
       ctx.fillStyle = "#13283a";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // El primer forEach recorre las filas del plano. El segundo recorre los símbolos de una fila
+      // y colorea las casillas reconocidas hasta que el PNG esté listo.
       mapa.plano.forEach((fila, y) => Array.from(fila).forEach((tipo, x) => {
         if (colores[tipo]) {
           ctx.fillStyle = colores[tipo];
@@ -167,6 +194,9 @@ export function crearRenderArena(canvas, urlJugador) {
   }
 
   return {
+    // Cada actualización entrega el plano, el estado del juego, las reglas de la sala y el ID local.
+    // Sin juego o sin mapa oculta el lienzo. Con rotación cambia la paleta según los periodos
+    // transcurridos, conserva el plano elegido y devuelve el nombre del tema para el indicador.
     dibujar(mapa, juego, configuracion = {}, idPropio) {
       if (!mapa || !juego) {
         escena = null;
@@ -184,6 +214,8 @@ export function crearRenderArena(canvas, urlJugador) {
       return arte.escenarios[tema].nombre;
     },
     repintar,
+    // Al retirar el retrato de un participante o salir de la cuenta, elimina esa URL de la caché
+    // de este lienzo. Una petición posterior de la misma imagen podrá cargarla de nuevo.
     olvidarImagen(url) { imagenes.delete(url); },
   };
 }
