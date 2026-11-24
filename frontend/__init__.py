@@ -1,0 +1,1 @@
+"""Cliente de escritorio Pygame."""

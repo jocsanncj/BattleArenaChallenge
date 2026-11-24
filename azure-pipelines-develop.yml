@@ -1,0 +1,36 @@
+trigger:
+  branches:
+    include:
+      - Develop
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    displayName: Configurar Python 3.12
+    inputs:
+      versionSpec: '3.12'
+
+  - script: python -m pip install -r requirements.txt pytest
+    displayName: Instalar dependencias
+
+  - script: docker build -t battle-arena-servidor:$(Build.BuildId) .
+    displayName: Construir imagen del servidor
+
+  - script: |
+      mkdir -p test-results
+      python -m pytest tests/ -v --junitxml=test-results/pytest.xml
+    displayName: Ejecutar pruebas
+    env:
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+      PYGAME_HIDE_SUPPORT_PROMPT: '1'
+
+  - task: PublishTestResults@2
+    displayName: Publicar resultados
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: 'test-results/pytest.xml'
+      failTaskOnFailedTests: true

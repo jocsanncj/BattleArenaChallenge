@@ -1,8 +1,10 @@
 # Battle Arena Challenge
 
-Videojuego multijugador de escritorio hecho con Python y Pygame (CE-1105 Principios de Modelado en Ingeniería, TEC).
+Videojuego multijugador para computadora (Python y Pygame) y navegador móvil. Ambos clientes comparten la misma arena. Proyecto de CE-1105 Principios de Modelado en Ingeniería, TEC.
 
-**Estado actual:** registro e inicio de sesión con Firebase y partida online para dos jugadores. El servidor valida los movimientos, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP. En la arena, el botón de acción del gamepad reproduce `Media/Efecto.mp3` como demostración de entrada física.
+[Jugar desde el celular](#jugar-desde-el-celular)
+
+**Estado actual:** registro e inicio de sesión con Firebase y partidas online para dos o tres jugadores. El servidor valida los movimientos y las extracciones del reactor, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP. Al consolidar el resultado, cada cliente abre una ceremonia con podio, duración, avatares y récords personales.
 
 La documentación de arquitectura y los diagramas compatibles con Azure DevOps Wiki están en [docs/Arquitectura-Azure-Wiki.md](docs/Arquitectura-Azure-Wiki.md).
 
@@ -12,23 +14,24 @@ La documentación de arquitectura y los diagramas compatibles con Azure DevOps W
 
 ```text
 Jugador
+  ├─ Navegador móvil (/movil) ──► Firebase Authentication y la misma API Flask
   ├─ Teclado o gamepad opcional
   │    └─ Pygame/SDL (acciones.py) ──► Cliente Pygame
-  └─ Cliente Pygame (main.py, Escenas.py, interfaz.py)
-       ├─ ServicioAuth (SistemaUsuario.py)
-       │    └─ FirebaseAuth (ClientesHttp.py) ──HTTPS──► Firebase Authentication
-       └─ ClienteServidor (ClientesHttp.py) ──HTTP──► Servidor Flask en Docker
+  └─ Cliente Pygame (frontend/)
+       ├─ ServicioAuth (frontend/auth/service.py)
+       │    └─ FirebaseAuth (frontend/auth/http_client.py) ──HTTPS──► Firebase Authentication
+       └─ ClienteServidor (frontend/auth/http_client.py) ──HTTP──► Servidor Flask en Docker
             ├─ valida tokens con Firebase Admin
             ├─ guarda perfiles en SQLite (/data/juego.db)
             └─ gestiona sala, movimientos, puntajes y resultado
-                 (servidor.py, us10.py, us15.py, us16.py)
+                 (server/, shared/game/)
                  └─ devuelve el estado para que el cliente dibuje la partida
 ```
 
 - **Firebase Authentication** guarda las contraseñas y envía los correos de verificación y recuperación. Nuestro código nunca guarda contraseñas.
 - **El mando es opcional** y se conecta a la computadora del jugador, no al servidor. En la arena se puede alternar entre teclado y gamepad; el MSI FORCE GC30 V2 es el modelo de referencia y se leen la cruceta y la palanca izquierda.
 - **El servidor** corre en Docker y guarda lo propio del juego (nombre de usuario único, récord, historial, logros) en una base de datos **SQLite**.
-- **El cliente** (Pygame) se ejecuta directamente en tu computadora, sin Docker.
+- **El cliente de escritorio** se ejecuta con Pygame en la computadora. El servidor entrega el **cliente móvil** al navegador al abrir `/movil`.
 - Para la partida, el cliente envía acciones HTTP (unirse, iniciar o moverse); no puede enviar el puntaje ni reemplazar el estado completo. El servidor valida cada paso y los dos clientes consultan el mismo estado.
 
 Hay dos roles, y puedes cumplir los dos a la vez:
@@ -36,7 +39,7 @@ Hay dos roles, y puedes cumplir los dos a la vez:
 | Rol | Qué necesita |
 |---|---|
 | **Quien levanta el servidor** (una persona del equipo) | Docker, `.env` y `firebase-admin.json` |
-| **Quien ejecuta el juego** (todos) | Python, `.env` y la dirección del servidor |
+| **Quien juega** | En computadora, Python, `.env` y la dirección del servidor. En celular, un navegador y la dirección web del juego. |
 
 ---
 
@@ -61,7 +64,7 @@ El integrante encargado de Firebase debe entregar los valores y credenciales nec
 
 ### `.env` (cada computadora que ejecuta el juego)
 
-En la carpeta del proyecto —la misma que contiene `main.py`— crea un archivo llamado exactamente `.env`. En Windows, al guardarlo con el Bloc de notas selecciona **Tipo: Todos los archivos**, para que no termine llamándose `.env.txt`.
+En la carpeta raíz del proyecto crea un archivo llamado exactamente `.env`. En Windows, al guardarlo con el Bloc de notas selecciona **Tipo: Todos los archivos**, para que no termine llamándose `.env.txt`.
 
 ```dotenv
 FIREBASE_API_KEY=PEGA_AQUI_LA_CLAVE_ENTREGADA
@@ -70,7 +73,7 @@ BATTLE_ARENA_SERVER=http://127.0.0.1:8000
 
 Reemplaza `PEGA_AQUI_LA_CLAVE_ENTREGADA` por la API key que proporcionó el equipo de Firebase; no escribas el texto de ejemplo literalmente.
 
-Si el servidor corre en otra computadora, cambia `127.0.0.1` por la IPv4 local del servidor. La dirección debe iniciar con `http://`, no `https://`.
+Si el servidor corre en otra computadora, cambia `127.0.0.1` por su IPv4 local. El servidor Docker de esta guía usa `http://` y el puerto `8000`.
 
 ### `firebase-admin.json` (solo computadora servidor)
 
@@ -79,6 +82,8 @@ La persona que inicia Docker debe copiar el archivo `firebase-admin.json` a la c
 ---
 
 ## 4. Descargar el proyecto (una vez en cada computadora)
+
+Los comandos de descarga abren la rama `main`. Para probar la versión del equipo en `Develop`, ejecuta `git switch Develop` dentro de `BattleArenaChallenge` después de clonar. Si el cambio móvil aún está en revisión, usa la rama del pull request.
 
 ### Windows (PowerShell)
 
@@ -221,14 +226,14 @@ Antes de abrirlo, confirma que el servidor está encendido.
 
   ```powershell
   cd $HOME\BattleArenaChallenge
-  .venv\Scripts\python.exe main.py
+  .venv\Scripts\python.exe -m frontend
   ```
 
 - Linux Mint: abre Terminal y ejecuta:
 
   ```bash
   cd ~/BattleArenaChallenge
-  .venv/bin/python main.py
+  .venv/bin/python -m frontend
   ```
 
 Se abrirá la ventana del juego con las opciones **Iniciar sesión** y **Crear cuenta**.
@@ -253,11 +258,21 @@ El correo y el nombre de usuario deben ser únicos.
 
 Para ver la información de la cuenta, selecciona **Ver perfil**. Para salir de la cuenta, elige **Cerrar sesión**.
 
+### Jugar desde el celular
+
+1. Inicia el servidor en una computadora siguiendo la sección 5. Conecta el celular al Wi-Fi de esa misma red. El juego se abre en el navegador del teléfono y usa la conexión a Internet para iniciar sesión con Firebase.
+2. Busca la IPv4 de la computadora como indica la sección 6. Si fuera `192.168.1.50`, abrirías `http://192.168.1.50:8000/movil` en el celular. Sustituye la IP por la de tu equipo. Si el servidor usa otro puerto, por ejemplo `8001`, usa ese puerto tanto en el celular como en el cliente de escritorio. En el teléfono, `localhost` apunta al propio teléfono.
+3. Toca **Iniciar sesión**, escribe tu usuario o correo y tu contraseña, y pulsa **Entrar**. Si es tu primera vez, usa **Crear cuenta** y verifica el correo. Para **Continuar con Google**, abre el juego desde la dirección que el equipo haya autorizado en Firebase. Si Google rechaza la IP local, también puedes entrar con una cuenta verificada que tenga contraseña.
+4. Toca **Jugar online**, elige un avatar y pulsa **Continuar**. Un segundo jugador puede entrar desde otra computadora o celular con su propia cuenta y un avatar distinto. Cuando **Sala de espera** muestre al menos dos jugadores, pulsa **Iniciar partida**. La sala admite hasta tres.
+5. En la arena, usa las flechas táctiles para moverte. Para puntuar, acércate al reactor, toca **Extraer energía** y permanece junto a él durante 1,5 segundos. Si la música está en silencio, toca **Activar música**. Al terminar verás el podio con los puntajes, la duración y los récords personales. Pulsa **Volver** para salir.
+
+Si la página no carga, prueba desde el celular la misma dirección cambiando `/movil` por `/health`. Debe aparecer `{"status":"ok"}`. Si tampoco abre, revisa la red, la IP, el puerto y el firewall según la sección 6.
+
 ---
 
 ## 8. Jugar con teclado o mando
 
-Para una partida online se necesitan dos jugadores, cada uno en una computadora conectada al mismo servidor.
+Una partida admite de dos a tres jugadores conectados al mismo servidor. Los siguientes controles corresponden al cliente de escritorio.
 
 1. En cada computadora, abre el juego e inicia sesión con una cuenta cuyo correo esté verificado.
 2. Selecciona **Jugar online** y elige un avatar.
@@ -269,11 +284,11 @@ Para una partida online se necesitan dos jugadores, cada uno en una computadora 
    - Izquierda: `A` o flecha izquierda.
    - Derecha: `D` o flecha derecha.
 6. Para usar un mando, conéctalo a la computadora donde está abierto el juego **antes de seleccionarlo**. En el panel de la arena, pulsa **Usar gamepad**. Usa la cruceta o la palanca izquierda para moverte.
-7. Con el modo gamepad seleccionado, pulsa el botón de acción (índice SDL `0`, normalmente **A**) para reproducir `Media/Efecto.mp3`. Es una demostración de que el juego recibe una acción física; por ahora no activa una mecánica de juego.
+7. Para extraer energía, colócate en una casilla junto al reactor y mantén `E` o, en modo gamepad, el botón de acción (índice SDL `0`, normalmente **A**) durante 1,5 segundos.
 8. El mensaje de confirmación muestra el nombre del mando detectado. Si el juego dice que no detecta un gamepad, vuelve a conectar el mando y pulsa **Usar gamepad** otra vez. El MSI FORCE GC30 V2 es el modelo de referencia; otros mandos pueden funcionar si el sistema los reconoce como gamepad.
 9. Para regresar al teclado, pulsa **Usar teclado**. Si el mando se desconecta durante la partida, el juego vuelve automáticamente al teclado.
 
-Cada movimiento válido lo procesa el servidor y puede sumar un punto. Los clientes comparten posiciones y puntajes; al terminar se muestra el resultado.
+El servidor procesa los movimientos, pero caminar no suma puntos. Una extracción válida junto al reactor suma un punto; después el reactor se recarga durante 4 segundos. Mientras un jugador extrae o el reactor se recarga, los demás no pueden extraer. El estado del reactor y los puntajes se comparten entre los clientes.
 
 La partida se actualiza mediante consultas HTTP periódicas, por lo que no requiere WebSockets ni abrir otro puerto. La sala y su configuración se conservan en el servidor; el estado activo de los movimientos y el temporizador reside en memoria del proceso servidor. Si se reinicia el contenedor durante una partida, esa partida activa se pierde y la sala se reinicia al siguiente acceso.
 
@@ -282,6 +297,13 @@ La partida se actualiza mediante consultas HTTP periódicas, por lo que no requi
 ---
 
 ## 9. Dónde viven los datos
+
+### Regla del ranking global
+
+El ranking suma los puntos de todas las partidas finalizadas y guardadas. Se ordena por
+puntos acumulados descendentes; en empate, por victorias descendentes y, si persiste,
+por nombre de usuario ascendente sin distinguir mayúsculas. El récord personal sigue
+siendo el puntaje más alto de una sola partida.
 
 | Dato | Dónde está | Cómo borrarlo |
 |---|---|---|
@@ -307,23 +329,59 @@ Linux Mint:  .venv/bin/python -m unittest discover -s tests -v
 
 ## 11. Estructura del proyecto
 
+El código está agrupado por capa. El cliente de escritorio vive en `frontend/`, el cliente móvil y la API en `server/`,
+la persistencia del perfil en `backend/` y las reglas/modelos compartidos en `shared/`.
+
+```text
+.
+├── backend/                 # Persistencia SQLite de perfiles
+├── frontend/
+│   ├── __main__.py          # Inicio con `python -m frontend`
+│   ├── app.py               # Arranque del cliente Pygame
+│   ├── auth/                # Casos de uso y clientes HTTP/Firebase
+│   ├── account/             # Menú, cuenta y flujo online
+│   ├── ui/                  # Pantallas del juego
+│   ├── components/          # Componentes visuales compartidos
+│   ├── actions.py           # Teclado y gamepad
+│   ├── repositories.py      # Adaptadores cliente-servidor del juego
+│   ├── results.py           # Ventana de resultado
+│   └── window.py            # Ciclo de vida de la ventana Pygame
+├── server/
+│   ├── __main__.py          # Inicio con `python -m server`
+│   └── app.py               # API Flask
+├── shared/
+│   ├── data.py              # Modelos y contratos/repositorios JSON
+│   ├── domain/              # Reglas de avatar, arena y partida
+│   └── game/                # Estado, puntaje y reglas de la arena
+├── tests/                   # Pruebas automáticas
+├── Dockerfile
+└── compose.yaml
+```
+
 | Archivo o carpeta | Para qué sirve |
 |---|---|
-| `main.py`, `Window.py`, `Boton.py` | Arranque y base de la interfaz Pygame |
-| `Escenas.py` | Pantallas del juego (bienvenida, registro, login, perfil...) |
-| `SistemaUsuario.py` | Casos de uso de cuenta (`ServicioAuth`) |
-| `ClientesHttp.py` | Conexión con Firebase y con el servidor |
-| `acciones.py` | Lectura de controles del teclado y gamepad |
+| `frontend/` | Cliente Pygame y sus pantallas |
+| `frontend/auth/` | Casos de uso de cuenta y conexiones HTTP |
+| `frontend/account/` | Registro, inicio de sesión, perfil y flujo online |
+| `frontend/ui/` | Pantallas de avatar, sala, configuración y arena |
+| `frontend/repositories.py` | Repositorios que conectan servicios del cliente con la API |
+| `frontend/actions.py` | Lectura de controles del teclado y gamepad |
 | `Media/Efecto.mp3` | Sonido reproducido al pulsar el botón de acción del gamepad o la tecla `E` |
-| `servidor.py` | API del servidor |
-| `us10.py`, `us15.py`, `us16.py` | Estado de arena, puntaje y reglas ejecutadas por el servidor |
-| `us17.py` | Ventana de resultado que se abre en el cliente |
+| `server/app.py` | API Flask del juego y perfiles |
+| `server/movil.py`, `server/templates/` y `server/static/` | Ruta `/movil`, páginas y controles del navegador móvil |
+| `shared/domain/` | Reglas de avatar, mapa, configuración y sala |
+| `shared/game/` | Estado de arena, puntaje y reglas de partida |
+| `shared/data.py` | Modelos y almacenamiento JSON local |
 | `backend/repository.py` | Base de datos SQLite (tablas `jugadores`, `partidas`, `logros`) |
 | `backend/jugador.py` | Clase `Jugador` (datos y estadísticas del jugador) |
 | `tests/` | Pruebas automáticas |
 | `tests/test_gamepad_input.py` | Pruebas del teclado y la entrada del gamepad |
-| `Dockerfile`, `compose.yaml` | Contenedor del servidor |
+| `Dockerfile`, `compose.yaml` | Construcción y ejecución del servidor |
 | `Doxyfile` | Configuración de la documentación del código |
+
+Para agregar una pantalla, usa `frontend/ui/` o `frontend/account/`. Las reglas compartidas
+van en `shared/domain/` o `shared/game/`; los endpoints nuevos, en `server/app.py`; la
+persistencia del perfil, en `backend/`. El cliente de escritorio se inicia con `python -m frontend` y el móvil se abre en `/movil`.
 
 ---
 
@@ -353,7 +411,7 @@ Linux Mint:  .venv/bin/python -m unittest discover -s tests -v
 - Ramas: `main` (estable) ← `develop` (integración) ← `feature/<nombre>` (cada tarea).
 - Trabaja en tu rama `feature/...`, haz commits pequeños y abre un **Pull Request** hacia `develop`.
 - Antes de abrir el Pull Request, corre las pruebas (sección 9).
-- No hagas commit de `.env`, `firebase-admin.json` ni de la carpeta `data/`.
+- No hagas commit de `.env`, `firebase-admin.json`, `.venv/`, `data/` ni de la documentación generada en `html/`.
 
 ---
 

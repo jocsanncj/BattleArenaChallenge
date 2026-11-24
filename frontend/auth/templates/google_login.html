@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso con Google | Battle Arena Challenge</title>
+  <style>
+    :root { color-scheme: dark; font: 100%/1.5 system-ui, sans-serif; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; background: #28282c; }
+    main { width: min(28rem, calc(100% - 3rem)); }
+    h1 { line-height: 1.2; }
+    button { padding: .75rem 1.25rem; border: 0; border-radius: .5rem; background: #235bd1; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: default; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Battle Arena Challenge</h1>
+    <button type="button" id="google" disabled>Continuar con Google</button>
+    <button type="button" id="cancelar">Cancelar y volver al juego</button>
+    <p id="estado" role="status">Conectando con Firebase…</p>
+  </main>
+  <script type="module">
+    const boton = document.querySelector("#google");
+    const cancelar = document.querySelector("#cancelar");
+    const estado = document.querySelector("#estado");
+    let terminado = false;
+
+    // Elige la ruta local según la acción (completar, cancelar o fallar) y devuelve la respuesta de fetch al botón que inició la operación.
+    function avisarJuego(accion, datos) {
+      // Pygame abre esta pestaña con una clave después de #. slice(1) quita ese primer carácter y X-Intento lleva la clave
+      // al servidor local para que compruebe qué intento está respondiendo, incluso si el jugador dejó abierta otra pestaña.
+      return fetch(`/login/google/${accion}`, {
+        method: "POST",
+        headers: {
+          "X-Intento": location.hash.slice(1),
+          "Content-Type": "application/json"
+        },
+        body: datos ? JSON.stringify(datos) : undefined
+      });
+    }
+
+    // Se usa al pulsar Cancelar y al cerrar la ventana emergente de Google. Bloquea los controles mientras el servidor local
+    // confirma la cancelación que recogerá el menú de Pygame. Si la petición falla, permite repetirla desde esta pestaña.
+    async function cancelarAcceso() {
+      cancelar.disabled = true;
+      boton.disabled = true;
+      try {
+        const respuesta = await avisarJuego("cancelar");
+        if (!respuesta.ok) throw new Error();
+        terminado = true;
+        estado.textContent = "Acceso cancelado. Vuelve a la ventana del juego.";
+      } catch {
+        estado.textContent = "No se pudo avisar al juego. Abre el acceso de nuevo desde el juego.";
+        cancelar.disabled = false;
+      }
+    }
+
+    // Recibe un código de fallo y lo envía a Pygame para que el menú también pueda mostrarlo. Con una respuesta correcta muestra
+    // el mensaje que preparó el juego. Un 409 indica que el intento ya no se puede usar y hay que iniciar otro desde el menú.
+    async function informarFallo(codigo) {
+      const aviso = `No se pudo iniciar sesión (${codigo}).`;
+      estado.textContent = aviso;
+      try {
+        const respuesta = await avisarJuego("fallar", { codigo });
+        if (respuesta.ok) {
+          terminado = true;
+          const datos = await respuesta.json();
+          estado.textContent = `${datos.error} (${codigo})`;
+        } else if (respuesta.status === 409) {
+          terminado = true;
+          estado.textContent = "Abre un nuevo acceso desde el juego.";
+        }
+      } catch {
+        estado.textContent = aviso;
+      }
+    }
+
+    // Registra Cancelar antes de descargar Firebase, así el jugador puede volver al juego incluso mientras carga el proveedor.
+    cancelar.addEventListener("click", cancelarAcceso);
+    try {
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js");
+      const { initializeAuth, inMemoryPersistence, browserPopupRedirectResolver, GoogleAuthProvider, signInWithPopup } =
+        await import("https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js");
+      const firebaseApp = initializeApp({{ firebase_config | tojson }});
+      const auth = initializeAuth(firebaseApp, {
+        persistence: inMemoryPersistence,
+        popupRedirectResolver: browserPopupRedirectResolver
+      });
+      const proveedor = new GoogleAuthProvider();
+      proveedor.setCustomParameters({ prompt: "select_account" });
+      if (!cancelar.disabled) {
+        boton.disabled = false;
+        estado.textContent = "";
+      }
+
+      // Tras elegir una cuenta, lee el token de acceso de Google en la credencial recibida. El servidor local lo canjea por la sesión
+      // de Firebase y prepara el perfil para el menú de Pygame. El mensaje de éxito espera a que ese servidor confirme el paso.
+      boton.addEventListener("click", async () => {
+        boton.disabled = true;
+        cancelar.disabled = true;
+        try {
+          const resultado = await signInWithPopup(auth, proveedor);
+          const credencial = GoogleAuthProvider.credentialFromResult(resultado);
+          if (!credencial?.accessToken) {
+            await informarFallo("credencial-incompleta");
+            return;
+          }
+          const respuesta = await avisarJuego("completar", { accessToken: credencial.accessToken });
+          terminado = true;
+          if (respuesta.ok) {
+            estado.textContent = "Sesión iniciada. Vuelve a la ventana del juego.";
+          } else {
+            // Si el servidor rechaza el intento, intenta leer su explicación en JSON. Un cuerpo vacío deja disponible el mensaje de reintento.
+            const datos = await respuesta.json().catch(() => ({}));
+            estado.textContent = datos.error || "Abre un nuevo acceso desde el juego.";
+          }
+        } catch (error) {
+          if (error.code === "auth/popup-closed-by-user") {
+            await cancelarAcceso();
+          } else {
+            await informarFallo(error.code || "auth/network-request-failed");
+          }
+        } finally {
+          boton.disabled = terminado;
+          cancelar.disabled = terminado;
+        }
+      });
+    } catch {
+      if (!cancelar.disabled) estado.textContent = "No se pudo cargar Firebase. Comprueba la conexión y vuelve a cargar la página.";
+    }
+  </script>
+</body>
+</html>

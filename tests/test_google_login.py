@@ -1,0 +1,108 @@
+import base64
+from io import BytesIO
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pygame
+
+from frontend.account.menu import MainMenuScene
+from frontend.auth import google_web, service
+
+
+class GoogleLoginTests(unittest.TestCase):
+    origen = "http://localhost:8765"
+
+    # Abre un intento en el menú de prueba con un puerto fijo y un navegador simulado. Cada caso obtiene una clave nueva
+    # y puede reproducir la respuesta de la pestaña con el cliente HTTP de Flask.
+    def setUp(self):
+        if not pygame.font.get_init():
+            pygame.font.init()
+            self.addCleanup(pygame.font.quit)
+        patches = (
+            patch.object(google_web, "_servidor", SimpleNamespace(server_port=8765)),
+            patch.object(google_web, "_intento_actual", None),
+            patch.object(google_web.webbrowser, "open_new_tab", return_value=True),
+            patch.object(service._servicio, "_sesion", None),
+        )
+        for parche in patches:
+            parche.start()
+            self.addCleanup(parche.stop)
+        self.escena = MainMenuScene(pygame.font.Font(None, 20))
+        self.escena._set_page("login")
+        self.escena._iniciar_sesion_google()
+        self.clave = self.escena.intento_google.clave
+        self.cliente = google_web.app.test_client()
+
+    # Envía al servidor local la acción de la pestaña y sus datos. Origin y X-Intento reproducen las dos comprobaciones del flujo real.
+    def _enviar(self, accion, datos=None):
+        return self.cliente.post(
+            f"/login/google/{accion}",
+            base_url=self.origen,
+            headers={"Origin": self.origen, "X-Intento": self.clave},
+            json=datos,
+        )
+
+    # El primer POST obtiene 204 y el siguiente fotograma vuelve al login. Repetir la cancelación con la clave anterior debe dar 409.
+    def test_cancelar_descarta_el_intento_y_su_clave(self):
+        self.assertEqual(self._enviar("cancelar").status_code, 204)
+
+        self.escena.update(None)
+
+        self.assertEqual(self.escena.page, "login")
+        self.assertEqual(self.escena.status, "Acceso con Google cancelado.")
+        self.assertIsNone(self.escena.intento_google)
+        self.assertIsNone(service.usuario_actual())
+        self.assertEqual(self._enviar("cancelar").status_code, 409)
+
+    # El código de Firebase se convierte en un mensaje del menú. Tras reintentar, un fallo que llegue con la clave antigua
+    # debe recibir 409 y dejar vigente el intento nuevo.
+    def test_error_de_firebase_aparece_en_el_juego_y_permite_reintentar(self):
+        respuesta = self._enviar("fallar", {"codigo": "auth/operation-not-allowed"})
+        self.assertEqual(respuesta.status_code, 200)
+
+        self.escena.update(None)
+
+        self.assertEqual(self.escena.page, "login")
+        self.assertEqual(self.escena.status, respuesta.get_json()["error"])
+        self.assertIsNone(service.usuario_actual())
+        self.escena._iniciar_sesion_google()
+        self.assertNotEqual(self.escena.intento_google.clave, self.clave)
+        self.assertEqual(self._enviar("fallar", {"codigo": "auth/popup-blocked"}).status_code, 409)
+
+    # Se simula una sesión válida. El POST devuelve 204 mientras usuario_actual() sigue vacío; después de update(),
+    # el perfil aparece en el menú. Así se verifica qué parte del flujo activa la sesión.
+    def test_acceso_verificado_activa_el_perfil_en_el_siguiente_fotograma(self):
+        sesion = service.Sesion("id-de-prueba", "refresh-de-prueba", "jugador@example.test", "Jugador")
+        perfil = {"name": "Jugador"}
+        with patch.object(google_web, "preparar_acceso_google", return_value=(sesion, perfil)) as preparar:
+            self.assertEqual(self._enviar("completar", {"accessToken": "credencial-de-prueba"}).status_code, 204)
+            preparar.assert_called_once_with("credencial-de-prueba")
+        self.assertIsNone(service.usuario_actual())
+
+        self.escena.update(None)
+
+        self.assertEqual(self.escena.page, "menu")
+        self.assertEqual(self.escena.current_user, perfil)
+        self.assertEqual(service.usuario_actual(), "Jugador")
+
+    def test_perfil_carga_avatar_predeterminado_y_personalizado(self):
+        self.escena.current_user = {
+            "avatar_selection": {"tipo": "predeterminado", "valor": "avatar_3"}
+        }
+        imagen, nombre = self.escena._crear_avatar_perfil()
+        self.assertEqual(imagen.get_size(), (72, 72))
+        self.assertEqual(nombre, "Brote")
+
+        original = pygame.Surface((24, 32), pygame.SRCALPHA)
+        buffer = BytesIO()
+        pygame.image.save(original, buffer, "avatar.png")
+        self.escena.current_user = {
+            "avatar_selection": {
+                "tipo": "personalizado",
+                "valor": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            }
+        }
+        imagen, nombre = self.escena._crear_avatar_perfil()
+        self.assertEqual(imagen.get_size(), (72, 72))
+        self.assertEqual(nombre, "Personalizado")

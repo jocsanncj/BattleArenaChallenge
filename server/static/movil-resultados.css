@@ -1,0 +1,79 @@
+#resultados-partida {
+  --oro: #ffda75;
+  --lila: #c5adff;
+  --menta: #65ecda;
+  --suave: #c7c0d7;
+  margin-block: .75rem .25rem;
+  padding: clamp(.65rem, 3vw, 1.4rem);
+  border: 1px solid #4f4667;
+  border-radius: .9rem;
+  background: #211f32;
+  color: #f4f1fb;
+}
+.celebracion {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 1rem .6rem .75rem;
+  border-radius: .55rem;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 55%, #342e4e 0 35%, transparent 67%);
+}
+.celebracion::before, .celebracion::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--menta), var(--menta)) 4% 12% / 4px 8px,
+    linear-gradient(var(--oro), var(--oro)) 20% 24% / 5px 7px,
+    linear-gradient(#ffa873, #ffa873) 11% 50% / 4px 6px,
+    linear-gradient(var(--lila), var(--lila)) 3% 73% / 4px 8px,
+    linear-gradient(var(--menta), var(--menta)) 16% 89% / 4px 6px;
+  background-repeat: no-repeat;
+}
+.celebracion::after { transform: scaleX(-1) translateY(9px); }
+@media (prefers-reduced-motion: no-preference) {
+  .celebracion::before, .celebracion::after { animation: caer-confeti 2.3s ease-in-out infinite alternate; }
+  .celebracion::after { animation-delay: -.8s; }
+  @keyframes caer-confeti { from { translate: 0 -.5rem; } to { translate: 0 .5rem; } }
+}
+#resultados-partida .etiqueta-resultados {
+  margin: 0; color: var(--lila); font-size: .76rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase;
+}
+#resultados-partida h3 {
+  margin: .18rem 0 .9rem; font-size: clamp(2rem, 8vw, 3.1rem); line-height: 1.12;
+  font-weight: 800; text-transform: uppercase; color: var(--oro);
+}
+.retrato-campeon, .retrato-podio {
+  display: grid; place-items: center; position: relative; margin-inline: auto;
+  border-radius: 50%; background: #4b3d54;
+}
+.retrato-campeon { width: 5.8rem; height: 5.8rem; margin-block-start: 1.1rem; }
+.retrato-campeon::before {
+  content: ""; position: absolute; z-index: 1; top: -.65rem; width: 2.3rem; height: 1rem;
+  background: var(--oro); clip-path: polygon(0 14%, 25% 56%, 50% 0, 74% 56%, 100% 14%, 100% 100%, 0 100%);
+}
+.retrato-campeon > *, .retrato-podio > * { grid-area: 1 / 1; }
+.retrato-campeon img, .retrato-podio img { width: 86%; height: 86%; object-fit: contain; }
+.inicial-avatar { font-weight: 750; color: var(--lila); }
+#ganador-partida { margin: .55rem 0 .1rem; font-size: clamp(1.25rem, 4vw, 1.8rem); font-weight: 750; line-height: 1.2; }
+#puntaje-final { margin: .25rem 0; color: var(--suave); }
+#duracion-partida { margin: .5rem 0 0; color: var(--menta); font-weight: 700; font-variant-numeric: tabular-nums; }
+#podio-partida {
+  list-style: none; padding: 0; margin: .55rem 0 0; display: grid; gap: .55rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+#podio-partida li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start;
+  gap: .2rem .65rem; padding: .7rem; background: #2c2840; border: 1px solid #58506d; border-radius: .65rem;
+}
+#podio-partida li:first-child { border-color: var(--oro); }
+.retrato-podio { width: 2.55rem; height: 2.55rem; grid-row: span 2; align-self: center; }
+.puesto-podio { align-self: end; color: var(--lila); font-weight: 750; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+#podio-partida li:first-child .puesto-podio, #podio-partida .nuevo-record { color: var(--oro); }
+.nombre-podio { line-height: 1.2; }
+.puntos-podio, .record-podio { grid-column: 1 / -1; }
+.puntos-podio { margin-top: .2rem; color: var(--menta); font-weight: 750; }
+.record-podio { color: var(--suave); font-size: .85rem; }
