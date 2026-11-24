@@ -21,6 +21,7 @@ class PantallaSala(Pantalla):
         _ultimo (int): momento (en ms) de la última lectura.
     """
     INTERVALO_MS = 500
+    ## @brief US-09–US-10: une al jugador y prepara el estado inicial de la sala.
     def __init__(self, ctx: Contexto, aviso: str = ""):
         """
         Descripción:
@@ -39,11 +40,13 @@ class PantallaSala(Pantalla):
         self._partida, self._ultimo = ctx.partida.obtener_partida(), pygame.time.get_ticks()
         if aviso:
             self.mensaje, self.color_mensaje = aviso, ERROR
+    ## @brief US-08–US-09: determina si el jugador ocupa el primer lugar de la sala.
     def _es_creador(self) -> bool:
         return (
             bool(self._partida.jugadores)
             and self._partida.jugadores[0].id_usuario == self.ctx.id_usuario
         )
+    ## @brief US-08–US-09: ofrece configuración al creador e inicio o salida a los jugadores.
     def botones(self) -> List[Boton]:
         creador = self._es_creador()
         botones = []
@@ -55,6 +58,7 @@ class PantallaSala(Pantalla):
             Boton(pygame.Rect(inicio_x, 400, 200, 40),"Iniciar partida",self._iniciar, EXITO,),
             Boton(pygame.Rect(volver_x, 400, 200, 40),"Volver",lambda: "volver",GRIS,),])
         return botones
+    ## @brief US-09: inicia la partida y solicita la transición a la arena.
     def _iniciar(self) -> str:
         """
         Descripción:
@@ -68,6 +72,7 @@ class PantallaSala(Pantalla):
         """
         self.ctx.partida.iniciar()
         return "arena"
+    ## @brief US-09–US-10: sincroniza la sala y detecta si otro jugador inició la partida.
     def actualizar(self) -> Optional[str]:
         """
         Descripción:
@@ -86,6 +91,7 @@ class PantallaSala(Pantalla):
                     j.id_usuario == self.ctx.id_usuario for j in self._partida.jugadores):
                 return "arena"
         return None
+    ## @brief US-06, US-08–US-10: dibuja jugadores, reglas vigentes y acciones de sala.
     def dibujar(self, superficie) -> None:
         """
         Descripción:

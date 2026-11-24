@@ -34,6 +34,7 @@ class PantallaArena(Pantalla):
     """
     TAM_CASILLA, ANCHO_PANEL, INTERVALO_MS = 36, 244, 300
     tecla_escape = "volver"
+    ## @brief US-07 y US-11: prepara estado, mapa, controles e imágenes de la arena.
     def __init__(self, ctx: Contexto):
         """
         Descripción:
@@ -60,6 +61,7 @@ class PantallaArena(Pantalla):
         self._ultima_accion_id = None
         self._interaccion_id = None
     INTERVALO_MOVIMIENTO_MS = 150
+    ## @brief US-11: alterna entre teclado y gamepad e informa el control activo.
     def _alternar_control(self) -> None:
         if self.control_entrada.modo == actions.MODO_TECLADO:
             self.control_entrada.seleccionar(actions.MODO_GAMEPAD)
@@ -67,6 +69,7 @@ class PantallaArena(Pantalla):
         else:
             self.control_entrada.seleccionar(actions.MODO_TECLADO)
             self.exito("Teclado seleccionado.")
+    ## @brief US-11: muestra el selector de control mientras la partida está activa.
     def botones(self) -> List[Boton]:
         if self._partida.estado_juego and self._partida.estado_juego.get("status") == "finished":
             return []
@@ -81,11 +84,13 @@ class PantallaArena(Pantalla):
                 self._alternar_control,
             )
         ]
+    ## @brief US-11: procesa entradas de control y comunica avisos al jugador.
     def procesar_evento(self, evento: pygame.event.Event) -> None:
         self.control_entrada.procesar_evento(evento)
         if self.control_entrada.aviso:
             self.mensaje, self.color_mensaje = self.control_entrada.aviso, ERROR
             self.control_entrada.aviso = ""
+    ## @brief US-11: limita la frecuencia de movimiento y envía la dirección al servidor.
     def _procesar_movimiento(self) -> None:
         juego = self._partida.estado_juego
         if not juego or juego.get("status") not in {"running", "overtime"}:
@@ -99,6 +104,7 @@ class PantallaArena(Pantalla):
             self.ctx.partida.mover(direccion)
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.mensaje, self.color_mensaje = str(error), ERROR
+    ## @brief US-18–US-19: inicia y detiene la interacción mantenida con el reactor.
     def _procesar_interaccion(self) -> None:
         event_id = self.control_entrada.accion_id
         if event_id is not None and event_id != self._ultima_accion_id:
@@ -115,6 +121,7 @@ class PantallaArena(Pantalla):
                 self.ctx.partida.interactuar_reactor("stop", interaccion_id)
             except (ErrorApp, OSError, RuntimeError, ValueError) as error:
                 self.mensaje, self.color_mensaje = str(error), ERROR
+    ## @brief US-07: ejecuta la arena en una ventana ajustada al mapa y controla su música.
     def ejecutar(self, superficie=None) -> str:
         """
         Descripción:
@@ -142,6 +149,7 @@ class PantallaArena(Pantalla):
             return super().ejecutar(ventana)
         finally:
             musica.detener()
+    ## @brief US-11, US-13 y US-18–US-19: actualiza movimiento, reactor y estado remoto.
     def actualizar(self) -> Optional[str]:
         """
         Descripción:
@@ -159,6 +167,7 @@ class PantallaArena(Pantalla):
             self._ultimo, self._partida = ahora, self.ctx.partida.obtener_partida()
             self._escuchar_extraccion(self._partida.estado_juego or {})
         return None
+    ## @brief US-18–US-19: detecta una extracción confirmada y reproduce su aviso.
     def _escuchar_extraccion(self, juego):
         reactor = juego.get("reactor") or {}
         marca = reactor.get("ultima_extraccion")
@@ -174,6 +183,7 @@ class PantallaArena(Pantalla):
             self._aviso_hasta = pygame.time.get_ticks() + 1800
             sonido_extraccion()
 
+    ## @brief US-06: reutiliza imágenes de avatar ya cargadas durante el renderizado.
     def _avatar(self, user_id, tam, tipo="retratos"):
         clave = (user_id, tam, tipo)
         if clave not in self._imagenes:

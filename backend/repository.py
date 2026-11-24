@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS logros (
 """
 
 class SQLiteRepository:
+    ## @brief US-04 y US-27–US-28: prepara el esquema y migra columnas de resultados.
     def __init__(self, ruta):
         self.ruta = ruta
         with closing(self._con()) as con:
@@ -58,20 +59,24 @@ class SQLiteRepository:
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_partidas_match_uid "
                 "ON partidas(match_id, uid) WHERE match_id IS NOT NULL"
             )
+    ## @brief Abre una conexión SQLite con filas nombradas y claves foráneas activas.
     def _con(self):
         con = sqlite3.connect(self.ruta)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys = ON")
         return con
+    ## @brief US-01: indica si el nombre de usuario está libre.
     def nombre_disponible(self, nombre):
         with closing(self._con()) as con:
             return con.execute("SELECT 1 FROM jugadores WHERE nombre = ?",
                             (nombre,)).fetchone() is None
+    ## @brief US-03 y US-05: obtiene el correo de una cuenta a partir de su nombre.
     def correo_de(self, nombre):  # para login por usuario
         with closing(self._con()) as con:
             f = con.execute("SELECT correo FROM jugadores WHERE nombre = ?",
                             (nombre,)).fetchone()
             return f["correo"] if f else None
+    ## @brief US-01 y US-04: crea o actualiza la ficha del jugador.
     def crear(self, uid, nombre, correo):
         try:
             with closing(self._con()) as con, con:
@@ -83,6 +88,7 @@ class SQLiteRepository:
             if "nombre" in str(e):
                 raise DuplicateUsername("Ese nombre de usuario ya está en uso.") from e
             raise DuplicateEmail("Ese correo ya está registrado.") from e
+    ## @brief US-16–US-17 y US-27–US-28: guarda una partida una sola vez y actualiza récords y logros.
     def registrar_resultado_partida(
         self,
         match_id,
@@ -218,6 +224,7 @@ class SQLiteRepository:
             ) from error
         return True
 
+    ## @brief US-17 y US-28: consulta las marcas personales de una partida guardada.
     def obtener_marcas_partida(self, match_id):
         """Devuelve el récord personal consolidado para cada participante de una partida."""
         with closing(self._con()) as con:
@@ -238,6 +245,7 @@ class SQLiteRepository:
             for fila in filas
         }
 
+    ## @brief US-27: calcula posiciones por puntos acumulados, victorias y nombre.
     def _consultar_ranking(self):
         with closing(self._con()) as con:
             filas = con.execute(
@@ -261,12 +269,14 @@ class SQLiteRepository:
             }
             for posicion, fila in enumerate(filas, start=1)
         ]
+    ## @brief US-27: devuelve el ranking público sin exponer los UID internos.
     def obtener_ranking(self):
         """Devuelve el ranking por puntos acumulados, victorias y nombre."""
         return [
             {clave: valor for clave, valor in fila.items() if clave != "uid"}
             for fila in self._consultar_ranking()
         ]
+    ## @brief US-04 y US-27–US-28: carga ficha, estadísticas, historial, logros y posición.
     def obtener(self, uid, correo_verificado):
         with closing(self._con()) as con:
             j = con.execute("SELECT * FROM jugadores WHERE uid = ?", (uid,)).fetchone()

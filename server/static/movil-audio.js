@@ -2,6 +2,7 @@
 // Así, el permiso otorgado por un toque puede servir para ambas pistas.
 // Al abrir la página, movil.js entrega el botón que contiene las URL de ambas pistas. Esta función
 // lee la preferencia de sonido de este navegador y devuelve sincronizar para seguir la escena del juego.
+/** @brief US-24 y US-30: configura reproducción accesible para arena y ceremonia móvil. */
 export function prepararMusica(boton) {
   const audio = new Audio();
   audio.preload = "none";
@@ -16,6 +17,7 @@ export function prepararMusica(boton) {
 
   // Usa la escena, la preferencia y el último intento para elegir el texto del botón. aria-pressed
   // informa a los lectores de pantalla de si está activada la música sin ningún reintento pendiente.
+  /** @brief US-24 y US-30: actualiza el botón según escena, preferencia y reproducción. */
   function mostrarControl() {
     boton.hidden = !escena;
     boton.textContent = pendiente === "error" ? "Reintentar música"
@@ -25,6 +27,7 @@ export function prepararMusica(boton) {
 
   // Pausa el reproductor y avanza el número de intento. Un play() anterior puede fallar más tarde
   // y su número ya no coincidirá, por lo que el error no cambiará el control de la escena actual.
+  /** @brief US-24 y US-30: pausa la pista e invalida intentos de reproducción anteriores. */
   function pausar() {
     intento++;
     audio.pause();
@@ -33,6 +36,7 @@ export function prepararMusica(boton) {
   // Pide al navegador que reproduzca la pista si la página está visible, hay escena y el usuario quiere sonido.
   // await espera la respuesta de play(). NotAllowedError deja pendiente un toque del jugador.
   // Los demás errores dejan disponible el botón de reintento.
+  /** @brief US-24 y US-30: reproduce la pista activa respetando la preferencia del usuario. */
   async function reproducir() {
     if (!escena || !activa || !paginaActiva || document.hidden) return;
     const actual = ++intento;

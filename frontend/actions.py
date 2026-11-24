@@ -31,6 +31,7 @@ _DIRECCIONES_TECLADO = {
 }
 
 
+## @brief Reproduce el efecto de sonido si se cargó correctamente.
 def _reproducir_sonido() -> None:
     if _sonido:
         _sonido.play()
@@ -65,6 +66,7 @@ def iniciar() -> None:
 class ControlEntrada:
     """Selecciona la entrada local y traduce teclado o controles SDL a direcciones."""
     UMBRAL_EJE = 0.5
+    ## @brief US-11: inicializa teclado, estado de acción y primer gamepad disponible.
     def __init__(self) -> None:
         pygame.joystick.init()
         self.modo = MODO_TECLADO
@@ -75,17 +77,20 @@ class ControlEntrada:
         _abajo.clear()
         self._abrir_primer_gamepad()
     @property
+    ## @brief Devuelve el nombre del gamepad conectado, si existe.
     def nombre_gamepad(self) -> str | None:
         if self._joystick is None:
             return None
         return self._joystick.get_name()
     @property
+    ## @brief Indica si se detectó un gamepad activo.
     def gamepad_conectado(self) -> bool:
         return self._joystick is not None
     @property
     def accion_id(self) -> str | None:
         """ID de la pulsación actual; permanece igual mientras se mantenga el botón."""
         return self._accion_id
+    ## @brief US-11: cambia entre teclado y gamepad y reinicia el estado de entrada.
     def seleccionar(self, modo: str) -> None:
         if modo == MODO_TECLADO:
             self.modo = MODO_TECLADO
@@ -101,6 +106,7 @@ class ControlEntrada:
         self.modo = MODO_GAMEPAD
         self._teclas.clear()
         self._accion_id = None
+    ## @brief US-11: traduce eventos SDL a teclas mantenidas y acciones únicas.
     def procesar_evento(self, evento: pygame.event.Event) -> None:
         if evento.type == pygame.KEYDOWN:
             nombre = pygame.key.name(evento.key).lower()
@@ -147,6 +153,7 @@ class ControlEntrada:
                     self.modo = MODO_TECLADO
                     self._accion_id = None
                     self.aviso = "Se desconectó el gamepad; se cambió al teclado."
+    ## @brief US-11: obtiene la dirección actual desde teclado, cruceta o palanca.
     def direccion_actual(self) -> str | None:
         if self.modo == MODO_TECLADO:
             for tecla, direccion in _DIRECCIONES_TECLADO.items():
@@ -168,6 +175,7 @@ class ControlEntrada:
                     return "right" if x > 0 else "left"
                 return "down" if y > 0 else "up"
         return None
+    ## @brief Detecta e inicializa el primer gamepad disponible.
     def _abrir_primer_gamepad(self) -> None:
         if self._joystick is not None:
             return

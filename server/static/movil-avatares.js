@@ -8,6 +8,7 @@ export const catalogo = new Map(radios.filter(radio => radio.dataset.personaje).
 
 // Recibe el texto base64 de una imagen personal. Comprueba el prefijo habitual de un PNG y el límite
 // de caracteres. Devuelve una dirección que img.src puede mostrar directamente, o una cadena vacía.
+/** @brief US-06 y US-30: convierte una imagen PNG válida en una URL de retrato. */
 export function retratoPersonalizado(valor) {
   return typeof valor === "string" && valor.startsWith("iVBORw0KGgo") && valor.length <= 2_000_000
     ? "data:image/png;base64," + valor : "";
@@ -16,6 +17,7 @@ export function retratoPersonalizado(valor) {
 // El selector de archivos entrega un File local. Se aceptan PNG, JPEG y WebP de hasta 10 MB.
 // decode() espera a que el navegador pueda leer sus píxeles. El resultado es un PNG en base64
 // preparado para enviar a la API cuando el jugador confirme su elección.
+/** @brief US-06 y US-30: valida, recorta y codifica la imagen de avatar elegida. */
 async function convertirImagen(archivo) {
   if (archivo.size > 10 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp"].includes(archivo.type)) {
     throw new Error("Elige una imagen PNG, JPG o WebP de hasta 10 MB.");
@@ -40,6 +42,7 @@ async function convertirImagen(archivo) {
 
 // Prepara la vista previa y devuelve los métodos que movil.js usa para leer, guardar o limpiar la selección.
 // cambio es la función que actualiza los botones de la sala cuando el jugador elige otro avatar.
+/** @brief US-06 y US-30: configura selección, carga, guardado y limpieza del avatar móvil. */
 export function prepararSeleccion(cambio) {
   const personalizado = document.querySelector("#opcion-personalizada");
   const archivo = document.querySelector("#archivo-avatar");
@@ -49,6 +52,7 @@ export function prepararSeleccion(cambio) {
 
   // find devuelve la opción marcada. Para una figura del catálogo se muestra su retrato. Para una foto
   // personal se usa la copia preparada en memoria. Después se notifica el cambio a los botones de la sala.
+  /** @brief US-06 y US-30: sincroniza la vista previa con la opción seleccionada. */
   function actualizarVista() {
     const opcion = radios.find(radio => radio.checked);
     const retrato = catalogo.get(opcion?.value)?.retrato || retratoPersonalizado(imagenPersonal);
@@ -60,6 +64,7 @@ export function prepararSeleccion(cambio) {
   }
   // Recibe el base64 guardado en la cuenta o generado por el selector. Conserva el valor en memoria
   // y solo muestra la opción «Personalizado» cuando se puede construir su dirección de imagen.
+  /** @brief US-06 y US-30: guarda y presenta el avatar personalizado en memoria. */
   function mostrarPersonal(valor) {
     imagenPersonal = valor;
     const retrato = retratoPersonalizado(valor);

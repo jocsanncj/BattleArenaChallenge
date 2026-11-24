@@ -23,6 +23,7 @@ class GestorObstaculos:
 
     DURACION_PUERTA = 7.0
 
+    ## @brief US-20: prepara puertas y trampas en posiciones transitables y reservadas.
     def __init__(self, mapa, puntos_inicio, segundos_inmovilizacion=3,
                  reloj: Callable[[], float] = time.monotonic, semilla=None):
         self.mapa = mapa
@@ -52,6 +53,7 @@ class GestorObstaculos:
                         for i, (tipo, duracion) in enumerate(tipos)]
         self.estados_jugadores: dict[str, dict] = {}
 
+    ## @brief US-20–US-21: actualiza puertas, inmovilizaciones e inmunidades vencidas.
     def actualizar(self, ahora=None):
         ahora = self.reloj() if ahora is None else ahora
         for puerta in self.puertas:
@@ -66,15 +68,18 @@ class GestorObstaculos:
                 estado.update(estado="normal", hasta=0.0, efecto=None, mensaje="",
                               inmunidad_hasta=inmunidad)
 
+    ## @brief US-20: devuelve la puerta ubicada en la casilla indicada, si existe.
     def puerta_en(self, x, y):
         return next((puerta for puerta in self.puertas
                      if puerta["x"] == x and puerta["y"] == y), None)
 
+    ## @brief US-20–US-21: indica si el estado temporal impide mover al jugador.
     def jugador_inmovil(self, jugador_id, ahora=None):
         self.actualizar(ahora)
         estado = self.estados_jugadores.get(str(jugador_id), {})
         return estado.get("estado") in {"inmovilizado", "congelado"}
 
+    ## @brief US-20: valida movimiento, terreno, puerta y estado del jugador.
     def validar_movimiento(self, jugador_id, x, y, ahora=None):
         """Valida límites, barreras, puertas y estado temporal del jugador."""
         ahora = self.reloj() if ahora is None else ahora
@@ -88,6 +93,7 @@ class GestorObstaculos:
             return False, "La puerta está cerrada. Espera a que se abra."
         return True, ""
 
+    ## @brief US-20 y US-22: reubica una trampa activa en una casilla segura.
     def _nueva_ubicacion_trampa(self, trampa, ubicaciones_ocupadas=()):
         """Busca una casilla aleatoria y segura para volver a colocar una trampa."""
         ocupadas = set(ubicaciones_ocupadas or ())
@@ -108,6 +114,7 @@ class GestorObstaculos:
         trampa.x, trampa.y = self.aleatorio.choice(candidatas)
         return True
 
+    ## @brief US-20: aplica el efecto de una trampa y programa su reubicación.
     def activar_trampa(self, jugador_id, x, y, ahora=None, ubicaciones_ocupadas=()):
         ahora = self.reloj() if ahora is None else ahora
         # Resuelve primero expiraciones pendientes (p. ej. una inmunidad que aún
@@ -138,6 +145,7 @@ class GestorObstaculos:
         return None
 
 
+    ## @brief US-21: congela al jugador y define la inmunidad posterior.
     def aplicar_congelamiento(self, jugador_id, duracion, ahora=None, mensaje="Un guardián te ha alcanzado",
                               segundos_inmunidad=3.0):
         """Aplica congelamiento y configura la inmunidad que inicia al descongelarse."""
@@ -157,6 +165,7 @@ class GestorObstaculos:
         }
         return self.estado_jugador(clave, ahora)
 
+    ## @brief US-21: comprueba si el jugador mantiene inmunidad frente al guardián.
     def esta_inmune(self, jugador_id, ahora=None):
         """True mientras dure la inmunidad posterior a un congelamiento."""
         instante = self.reloj() if ahora is None else ahora
@@ -164,6 +173,7 @@ class GestorObstaculos:
         estado = self.estados_jugadores.get(str(jugador_id), {})
         return estado.get("inmunidad_hasta", 0.0) > instante
 
+    ## @brief US-20: prepara barreras, puertas y trampas para enviarlas a los clientes.
     def estado_publico(self, ahora=None):
         self.actualizar(ahora)
         trampas = [{"id": t.identificador, "tipo": t.tipo, "x": t.x, "y": t.y,
@@ -178,6 +188,7 @@ class GestorObstaculos:
         return {"barreras": barreras, "puertas": [p.copy() for p in self.puertas],
                 "trampas": trampas}
 
+    ## @brief US-20–US-21: devuelve estados y tiempos restantes del jugador.
     def estado_jugador(self, jugador_id, ahora=None):
         self.actualizar(ahora)
         instante = self.reloj() if ahora is None else ahora
@@ -188,6 +199,7 @@ class GestorObstaculos:
                 "segundos_restantes": max(0.0, estado["hasta"] - instante),
                 "segundos_inmunidad": max(0.0, estado.get("inmunidad_hasta", 0.0) - instante)}
 
+    ## @brief US-22: crea copias temporales de trampas para un evento especial.
     def duplicar_trampas(self, posiciones_ocupadas=()):
         """Crea una copia temporal de cada trampa activa en una casilla libre."""
         nuevas = []
@@ -215,6 +227,7 @@ class GestorObstaculos:
             nuevas.append(copia.identificador)
         return nuevas
 
+    ## @brief US-22: elimina las trampas temporales al finalizar el evento.
     def quitar_trampas_evento(self, identificadores):
         """Elimina las trampas adicionales de un evento sin alterar las originales."""
         conjunto = set(identificadores)

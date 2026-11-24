@@ -39,6 +39,7 @@ GOLD = (255, 216, 112)
 _AVATAR_CACHE = {}
 
 
+## @brief Comprueba que Pygame esté disponible antes de abrir la ceremonia.
 def _require_pygame() -> None:
     if pygame is None:
         raise RuntimeError("Falta pygame. Ejecuta primero: python -m pip install pygame==2.6.1")
@@ -127,12 +128,14 @@ def draw_avatar(surface, avatar_id: str, center: tuple, size: int = 18,
 
 
 class _CelebrationMusic:
+    ## @brief Prepara el estado de audio independiente de la ventana principal.
     def __init__(self):
         self.sound = None
         self.channel = None
         from frontend.audio import preferencia
         self.muted = not preferencia()
 
+    ## @brief Inicia la música de celebración y devuelve cualquier aviso de audio.
     def start(self) -> str:
         try:
             if pygame.mixer.get_init() is None:
@@ -149,11 +152,13 @@ class _CelebrationMusic:
         except Exception:
             return "Audio no disponible en este equipo. La celebración continúa."
 
+    ## @brief Alterna el silencio de la música de celebración.
     def toggle(self):
         self.muted = not self.muted
         if self.sound:
             self.sound.set_volume(0 if self.muted else 0.40)
 
+    ## @brief Detiene el canal de audio al cerrar la ceremonia.
     def stop(self):
         if self.channel:
             self.channel.stop()
@@ -229,6 +234,7 @@ class VictoryView:
     Dibuja el resultado final en la ventana o en una Surface de prueba.
     """
 
+    ## @brief Prepara fuentes y partículas reproducibles para la ceremonia.
     def __init__(self):
         _require_pygame()
         self.fonts = {}
@@ -237,6 +243,7 @@ class VictoryView:
                           rng.choice([TEAL, ORANGE, PURPLE, GOLD]), rng.randrange(3, 7))
                          for _ in range(86)]
 
+    ## @brief Renderiza texto ajustado y alineado en la superficie de victoria.
     def _text(self, surface, text, position, size=20, color=TEXT, bold=False,
               center=False, max_width=None):
         key = (size, bold)
@@ -256,6 +263,7 @@ class VictoryView:
             rect.topleft = tuple(int(value) for value in position)
         surface.blit(rendered, rect)
 
+    ## @brief US-17 y US-26: dibuja ganador, podio, récords y celebración.
     def render(self, surface, result: dict, elapsed: float = 0,
                audio_notice: str = "", muted: bool = False):
         surface.fill((18, 15, 37))
@@ -374,6 +382,7 @@ class VictoryView:
         self._text(surface, "ESC  ·  CERRAR VENTANA", (430, 675), 14, TEXT, center=True)
 
 
+## @brief US-17 y US-26: muestra la ceremonia de victoria en una ventana Pygame.
 def show_victory(result: dict, screenshot: str | Path | None = None) -> None:
     """
     Abre una ventana del sistema en este proceso; US10 debe ejecutar este archivo en un subproceso.
@@ -413,6 +422,7 @@ def show_victory(result: dict, screenshot: str | Path | None = None) -> None:
         pygame.quit()
 
 
+## @brief US-17 y US-26: lanza la ceremonia en un proceso aislado.
 def launch_victory_window(result: dict) -> subprocess.Popen:
     """
     Inicia una ventana del sistema en un proceso independiente sin cerrar ni bloquear la arena existente de Pygame.
@@ -453,6 +463,7 @@ def launch_victory_window(result: dict) -> subprocess.Popen:
         raise
 
 
+## @brief Valida argumentos y ejecuta la ventana de resultados.
 def main() -> int:
     parser = argparse.ArgumentParser(description="US17: ventana independiente de victoria")
     source = parser.add_mutually_exclusive_group(required=True)

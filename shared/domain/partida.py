@@ -30,6 +30,7 @@ class ServicioPartida:
     """
     JUGADORES_MINIMOS = 2
     PERMITIR_UN_JUGADOR = False  # CAMBIO ONLINE: se exigen dos jugadores conectados para iniciar
+    ## @brief Conecta las reglas de sala con su repositorio y escenario.
     def __init__(self, repositorio: RepositorioPartida, arena: MapaArena = ARENA_PREDETERMINADA):
         """
         Descripción:
@@ -42,6 +43,7 @@ class ServicioPartida:
         """
         self._repo = repositorio
         self.arena = arena
+    ## @brief Carga la versión más reciente de la partida.
     def obtener_partida(self) -> Partida:
         """
         Descripción:
@@ -54,6 +56,7 @@ class ServicioPartida:
         """
         return self._repo.cargar()
     # ----- Configuración de la partida -----
+    ## @brief US-08: impide cambiar opciones después de iniciar la partida.
     def verificar_configurable(self) -> None:
         """
         Descripción:
@@ -67,6 +70,7 @@ class ServicioPartida:
         """
         if self._repo.cargar().estado == "jugando":
             raise ErrorApp("La partida ya inició: no se puede cambiar la configuración.")
+    ## @brief US-08: valida y guarda la configuración antes de empezar.
     def actualizar_configuracion(self, configuracion: ConfiguracionPartida) -> None:
         """
         Descripción:
@@ -102,6 +106,7 @@ class ServicioPartida:
         partida.configuracion = configuracion
         self._repo.guardar(partida)
     # ----- Sala de espera, inicio y temporizador -----
+    ## @brief US-09–US-10: añade al usuario a la sala con un inicio disponible.
     def unirse(self, id_usuario: int, nombre_usuario: str) -> Jugador:
         """
         Descripción:
@@ -145,6 +150,7 @@ class ServicioPartida:
         partida.jugadores.append(jugador)
         self._repo.guardar(partida)
         return jugador
+    ## @brief US-09–US-10: elimina al usuario de la sala y reinicia una sala vacía.
     def salir(self, id_usuario: int) -> None:
         """
         Descripción:
@@ -170,6 +176,7 @@ class ServicioPartida:
             if not restantes:
                 partida.estado, partida.iniciada_en = "esperando", None
             self._repo.guardar(partida)
+    ## @brief US-09: inicia la partida cuando hay suficientes jugadores.
     def iniciar(self) -> None:
         """
         Descripción:
@@ -201,6 +208,7 @@ class ServicioPartida:
             raise ErrorApp("Esperando jugador...")
         partida.estado, partida.iniciada_en = "jugando", time.time()
         self._repo.guardar(partida)
+    ## @brief US-11: envía el movimiento al servidor para validarlo.
     def mover(self, direccion: str) -> None:
         """Solicita un movimiento al servidor; este valida y confirma la acción."""
         if not isinstance(self._repo, RepositorioPartidaOnline):
@@ -209,6 +217,7 @@ class ServicioPartida:
             self._repo.mover_online(direccion)
         except (OSError, RuntimeError, ValueError) as error:
             raise ErrorApp(str(error)) from error
+    ## @brief US-18–US-19: solicita iniciar o detener una extracción del reactor.
     def interactuar_reactor(self, accion: str, event_id: str) -> None:
         """Envía al servidor el inicio o fin de una interacción con el reactor."""
         if not isinstance(self._repo, RepositorioPartidaOnline):
@@ -217,6 +226,7 @@ class ServicioPartida:
             self._repo.interaccion_reactor_online(accion, event_id)
         except (OSError, RuntimeError, ValueError) as error:
             raise ErrorApp(str(error)) from error
+    ## @brief US-25: calcula los segundos transcurridos desde el inicio.
     def segundos_transcurridos(self, partida: Partida) -> float:
         """
         Descripción:

@@ -6,6 +6,7 @@ AJUSTE = Path.home() / ".battle_arena" / "musica.txt"
 MEDIA = Path(__file__).resolve().parents[1] / "Media"
 
 
+## @brief Lee la preferencia de música guardada para el usuario.
 def preferencia():
     try:
         return AJUSTE.read_text().strip() != "0"
@@ -14,11 +15,13 @@ def preferencia():
 
 
 class Musica:
+    ## @brief Inicializa el estado de música con la preferencia persistida.
     def __init__(self):
         self.activa = preferencia()
         self.sonando = False
         self.aviso = ""
 
+    ## @brief Inicia la pista en bucle si el audio está habilitado.
     def iniciar(self):
         if not self.activa or self.sonando:
             return
@@ -35,11 +38,13 @@ class Musica:
         except (pygame.error, OSError) as exc:
             self.aviso = f"Audio no disponible. {exc}"
 
+    ## @brief Detiene la pista activa sin modificar la preferencia.
     def detener(self):
         if self.sonando:
             pygame.mixer.music.stop()
             self.sonando = False
 
+    ## @brief Alterna la reproducción y persiste la preferencia de música.
     def alternar(self):
         self.activa = not self.activa
         self.aviso = ""
@@ -63,7 +68,7 @@ _efecto = None
 
 
 def sonido_extraccion():
-    """Usa un canal de efectos independiente de la música del menú."""
+    """US-18: reproduce el efecto de extracción en un canal independiente."""
     global _efecto
     try:
         if not pygame.mixer.get_init():

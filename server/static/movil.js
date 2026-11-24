@@ -14,6 +14,7 @@ let temporizadorPartida;
 
 // Punto común para las llamadas HTTP del móvil. ruta identifica el recurso y opciones puede incluir método, token y cuerpo.
 // Devuelve el JSON o lanza un Error con el estado HTTP para que el llamador distinga, por ejemplo, un perfil ausente de una sesión rechazada.
+/** @brief US-30–US-31: envía una solicitud HTTP y devuelve JSON o un error con su estado. */
 async function pedir(ruta, opciones) {
   const respuesta = await fetch(ruta, opciones);
   // Si la respuesta no contiene JSON válido, usa un objeto vacío para poder informar del error HTTP.
@@ -28,6 +29,7 @@ async function pedir(ruta, opciones) {
 
 // Se llama al entrar con contraseña o Google. Busca el perfil de juego asociado a la identidad que Firebase acaba de comprobar.
 // Devuelve el objeto user de la API tanto si el perfil ya existía como si se acaba de crear.
+/** @brief US-04, US-29 y US-30: obtiene o crea el perfil asociado a la sesión Firebase. */
 async function cargarPerfil(usuario, accesoGoogle = false) {
   // US29 y US30 recuperan el mismo perfil de US04 mediante el UID del token de Firebase.
   const cabeceras = { Authorization: `Bearer ${await usuario.getIdToken()}` };
@@ -48,6 +50,7 @@ async function cargarPerfil(usuario, accesoGoogle = false) {
 
 // Al entrar o actualizar el perfil, lee el nombre, avatar, estadísticas, logros e historial del perfil que envía el servidor.
 // avatar_selection trae una imagen personal o el identificador del catálogo. Un perfil sin selección usa el primer avatar.
+/** @brief US-04 y US-27–US-28: presenta perfil, estadísticas, logros e historial. */
 function renderPerfil(perfil) {
   document.querySelector("#jugador").textContent = perfil.name;
   const imagenAvatar = document.querySelector("#avatar-perfil");
@@ -109,6 +112,7 @@ function renderPerfil(perfil) {
 
 // Construye y devuelve un elemento <li> con título y detalle. El historial, el ranking y el marcador deciden dónde insertarlo.
 // textContent muestra los nombres como texto incluso cuando contienen caracteres como < o >.
+/** @brief US-17 y US-27–US-28: crea una fila de texto para listas del perfil y del juego. */
 function fila(titulo, detalle) {
   const item = document.createElement("li");
   const nombre = document.createElement("strong");
@@ -121,6 +125,7 @@ function fila(titulo, detalle) {
 
 // Se usa al abrir la cuenta, al refrescar el ranking y tras una partida. Conserva al jugador que inició la consulta
 // para que una respuesta tardía no cambie la pantalla de otra cuenta. Un ranking válido devuelve true aunque esté vacío.
+/** @brief US-27: consulta y presenta el ranking global del servidor. */
 async function cargarRanking() {
   const jugador = jugadorActivo;
   if (!jugador || actualizar.disabled) return false;
@@ -147,6 +152,7 @@ iniciarAccesoMovil({
   pedir,
   // acceso.js llama a este método una vez autenticado el usuario. Espera su perfil antes de mostrar la cuenta
   // y después inicia el ranking, la selección de avatar y la consulta de la sala cada dos segundos.
+  // US-04, US-29 y US-30: inicia el perfil, selección y sondeo de sala tras autenticar.
   async abrirCuenta(user, accesoGoogle) {
     renderPerfil(await cargarPerfil(user, accesoGoogle));
     jugadorActivo = user;
@@ -159,6 +165,7 @@ iniciarAccesoMovil({
   },
   // El botón de salir llama a este método antes de cerrar Firebase, mientras el token aún permite liberar la plaza.
   // Devuelve false si la red o el servidor impiden confirmarlo. El formulario usa ese resultado en el mensaje de despedida.
+  // US-10 y US-30: libera la plaza del jugador antes de cerrar su sesión móvil.
   async salirDePartida() {
     const jugador = jugadorActivo;
     cerrandoSesion = true;
@@ -184,6 +191,7 @@ iniciarAccesoMovil({
   },
   // Después de cerrar Firebase, invalida la referencia al jugador y detiene el temporizador de dos segundos.
   // Las consultas ya enviadas comprueban esa referencia antes de volver a escribir en el perfil o la sala.
+  // US-30: limpia el estado visual y las consultas asociadas a la cuenta cerrada.
   cerrarCuenta() {
     jugadorActivo = undefined;
     clearInterval(temporizadorPartida);
@@ -205,6 +213,7 @@ const actualizarPerfil = document.querySelector("#actualizar-perfil");
 
 // El botón del perfil y el cierre de partida vuelven a pedir /api/profile. El token identifica la cuenta y renderPerfil
 // intenta actualizar la ficha completa, incluidos los logros. El sondeo del podio usa el resultado booleano para saber si debe reintentar.
+/** @brief US-28 y US-30: vuelve a cargar y mostrar el perfil tras una partida. */
 async function actualizarPerfilMovil() {
   const jugador = jugadorActivo;
   if (!jugador || actualizarPerfil.disabled) return false;
@@ -246,6 +255,7 @@ const editorConfiguracion = prepararConfiguracion({
 
 // La cuenta, el temporizador y varias acciones vuelven a pedir el estado compartido. Cada petición guarda una marca única (Symbol).
 // Una consulta forzada reemplaza esa marca. Solo la respuesta que aún la conserva y corresponde al mismo usuario puede redibujar la partida.
+/** @brief US-09–US-31: sondea el estado de sala y partida y sincroniza las vistas móviles. */
 async function cargarEstadoPartida(forzar = false) {
   const jugador = jugadorActivo;
   const estado = document.querySelector("#estado-partida");
@@ -310,12 +320,14 @@ document.querySelector("#actualizar-partida").addEventListener("click", () => ca
 
 // El marcador y el podio piden un retrato con el registro de un participante. Primero se busca su avatar_id en el catálogo
 // y luego su user_id en las imágenes personales que ya llegaron. Durante la descarga puede no haber imagen.
+/** @brief US-06 y US-30: busca el retrato disponible para un participante. */
 function retratoJugador(jugador) {
   return catalogo.get(jugador.avatar_id)?.retrato || retratosPersonales.get(jugador.user_id);
 }
 
 // En cada actualización de la arena usa el reloj y los puntos recibidos del servidor. Si existe remaining_seconds muestra
 // la cuenta atrás. En su ausencia muestra el tiempo transcurrido, y cambia la etiqueta si la partida entra en prórroga.
+/** @brief US-15–US-16 y US-30: dibuja reloj y marcador con el estado del servidor. */
 function mostrarIndicadores(juego, tema, idPropio) {
   document.querySelector("#titulo-arena").textContent = tema || "Arena";
   const restante = juego.remaining_seconds != null;
@@ -341,6 +353,7 @@ function mostrarIndicadores(juego, tema, idPropio) {
 
 // La sala y el podio pueden pedir la misma foto en cada sondeo. La entrada vacía reserva el id antes de descargarla.
 // Cuando llega la imagen, reemplaza esa marca. Si la descarga falla se conserva la marca mientras ese jugador siga en la caché.
+/** @brief US-06 y US-30: carga y almacena el retrato personalizado de un jugador. */
 function cargarRetratoPersonal(id, usuario) {
   if (retratosPersonales.has(id)) return;
   retratosPersonales.set(id, "");
@@ -364,6 +377,7 @@ function cargarRetratoPersonal(id, usuario) {
 
 // Interpreta el último estado sin enviar peticiones. En la sala busca id_usuario y, durante una partida, user_id y connected.
 // Devuelve las señales que la interfaz usa para entrar, jugar o volver a conectar a un participante desconectado.
+/** @brief US-09–US-10: determina si el jugador está en sala, jugando o debe reconectar. */
 function participacion() {
   if (!datosPartida) return {};
   const { partida, game, jugador_actual_id } = datosPartida;
@@ -378,6 +392,7 @@ function participacion() {
 
 // Recalcula los botones al cambiar el estado o la selección. Para entrar en la sala se necesita una elección de avatar o una reconexión disponible.
 // El móvil habilita Iniciar con al menos dos jugadores en la sala. El servidor decide finalmente si puede comenzar.
+/** @brief US-06, US-09 y US-30: habilita acciones según sala, partida y avatar seleccionado. */
 function actualizarBotones() {
   const { dentro, sala, reconectar, enCurso } = participacion();
   const bloqueo = !datosPartida || operacionSala || cerrandoSesion;
@@ -391,6 +406,7 @@ function actualizarBotones() {
 
 // Con una sola respuesta de la API alterna las vistas de selección, espera, juego y resultados, y sincroniza el editor de la sala.
 // Descarga los retratos de participantes actuales y libera los que ya salieron. Solo reconstruye la lista de espera si el usuario está en ella.
+/** @brief US-06, US-08–US-10 y US-30: presenta sala, configuración, jugadores y arena. */
 function mostrarSala(partida, game, idPropio, avatares) {
   const { dentro, sala, jugando } = participacion();
   document.querySelector("#seleccion-personaje").hidden = Boolean(dentro || resultadoVisible);
@@ -455,6 +471,7 @@ const avisoSala = document.querySelector("#aviso-sala");
 
 // Los botones envían join, leave o start. Mientras se tramita una acción se impide otra y se invalida cualquier sondeo anterior.
 // Al terminar, incluso ante un error, pide el estado vigente para que los botones reflejen la decisión del servidor.
+/** @brief US-06 y US-09–US-10: ejecuta unirse, salir o iniciar una partida online. */
 async function cambiarSala(accion) {
   const jugador = jugadorActivo;
   const boton = {join: unirseSala, leave: abandonarSala, start: iniciarPartida}[accion];
@@ -517,6 +534,7 @@ const avisoMovimiento = document.querySelector("#aviso-movimiento");
 
 // Recibe la dirección de la flecha pulsada y envía una petición autenticada por movimiento aceptado por el control.
 // Mientras espera la respuesta ignora otras pulsaciones. Una respuesta de otra sesión tampoco cambia los controles.
+/** @brief US-11 y US-30: envía un movimiento y actualiza la interfaz con la respuesta. */
 async function moverJugador(direccion) {
   const jugador = jugadorActivo;
   if (!jugador || controlesArena.disabled) return;
@@ -561,6 +579,7 @@ let extraccion;
 
 // Extraer y Cancelar llaman a esta función con start o stop. Cada inicio crea un identificador aleatorio que se conserva
 // al recibir confirmación para asociar una posible cancelación al mismo jugador y al mismo intento.
+/** @brief US-18–US-19 y US-30: inicia o cancela una extracción identificada del reactor. */
 async function cambiarExtraccion(accion) {
   // US30 envía la acción del reactor (US18). El servidor valida la extracción
   // y publica los puntos de US19 en el siguiente estado del marcador.
@@ -613,6 +632,7 @@ cancelarExtraccion.addEventListener("click", () => cambiarExtraccion("stop"));
 
 // En cada sondeo convierte el estado del reactor en texto para el jugador. Redondea hacia arriba los segundos pendientes
 // y mantiene el aviso de partida inactiva si falta el reactor, el juego terminó o está en pausa.
+/** @brief US-18–US-19 y US-30: muestra disponibilidad y tiempo restante del reactor. */
 function mostrarEstadoReactor(juego) {
   const estado = document.querySelector("#estado-reactor");
   const reactor = juego?.reactor;
@@ -634,6 +654,7 @@ function mostrarEstadoReactor(juego) {
 
 // Al cerrar la cuenta, descarta la consulta pendiente, el intento de extracción, el podio y las imágenes personales.
 // Vacía el marcador y devuelve los controles a selección de personaje, listos para el siguiente jugador de este móvil.
+/** @brief US-30: descarta datos, medios y controles de la partida al cerrar la cuenta. */
 function limpiarPartidaMovil() {
   ultimoResultadoVisto = undefined;
   resultadoPendiente = false;

@@ -30,6 +30,7 @@ class MultiplayerArena:
     Objeto del servidor: una partida de dos o tres jugadores comparte una instancia; los clientes no deben crear estados independientes.
     """
 
+    ## @brief US-09–US-16: crea el estado compartido de una partida y sus reglas.
     def __init__(self, broadcast: Callable[[dict], None], scoreboard: Scoreboard | None = None,
                  rules: GameRules | None = None, clock: Callable[[], float] = time.monotonic):
         if not callable(broadcast) or inspect.iscoroutinefunction(broadcast):
@@ -49,18 +50,21 @@ class MultiplayerArena:
         self._lock = threading.RLock()
         self._rule_state = self.rules.update(self.scoreboard.scores(), self._clock())
 
+    ## @brief Valida texto obligatorio antes de incorporarlo al estado de la arena.
     @staticmethod
     def _text(value: str, field: str) -> str:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{field} no puede estar vacío.")
         return value.strip()
 
+    ## @brief Valida y normaliza coordenadas finitas de los jugadores.
     @staticmethod
     def _position(x: float, y: float) -> tuple[float, float]:
         if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (x, y)):
             raise ValueError("Las coordenadas deben ser valores numéricos finitos.")
         return float(x), float(y)
 
+    ## @brief US-03–US-10: registra o reconecta al jugador y difunde el estado actualizado.
     def join_player(self, connection_id: str, player_id: str, username: str,
                     avatar_id: str, x: float, y: float) -> dict:
         """
@@ -102,6 +106,7 @@ class MultiplayerArena:
             self._broadcast(deepcopy(state))
             return state
 
+    ## @brief US-13: vincula una solicitud a la identidad asociada a su conexión.
     def get_player_id(self, connection_id: str) -> str:
         """
         Identifica al autor por su conexión para impedir que un mensaje suplante a otro jugador.
@@ -112,10 +117,12 @@ class MultiplayerArena:
             except (KeyError, TypeError) as exc:
                 raise ValueError("La conexión no está vinculada a un jugador autenticado.") from exc
 
+    ## @brief US-09–US-10: indica si hay al menos dos conexiones de jugador.
     def has_two_players(self) -> bool:
         with self._lock:
             return len(self._connections) >= 2
 
+    ## @brief US-10 y US-17: obtiene las identidades que siguen conectadas a la sala.
     def connected_player_ids(self) -> set[str]:
         """Da las conexiones actuales incluso después de congelar el resultado final."""
         # Copia los ID de jugador bajo el bloqueo, incluso cuando el podio ya se guardó. El servidor usa
@@ -123,6 +130,7 @@ class MultiplayerArena:
         with self._lock:
             return set(self._connections.values())
 
+    ## @brief US-09 y US-16: comienza la partida o reanuda el reloj tras reconexión.
     def begin_match(self, now: float | None = None) -> None:
         # Requiere US09: invoque este método cuando ambos jugadores estén listos; también reanuda la partida tras una reconexión.
         now = self._clock() if now is None else now
@@ -144,6 +152,7 @@ class MultiplayerArena:
             self._active = True
             self._broadcast(deepcopy(self._snapshot_locked()))
 
+    ## @brief US-11 y US-13: confirma y difunde el movimiento ya validado del jugador.
     def confirm_movement(self, connection_id: str, x: float, y: float,now: float | None = None) -> bool:
         """
         Se invoca después de que US11 confirme el movimiento; actualiza la posición y difunde el resultado a los jugadores.
@@ -175,6 +184,7 @@ class MultiplayerArena:
                 self._broadcast(deepcopy(self._snapshot_locked()))
             return True
 
+    ## @brief US-10 y US-13: desconecta al jugador, pausa el reloj y difunde el estado.
     def disconnect_player(self, connection_id: str, now: float | None = None) -> None:
         now = self._clock() if now is None else now
         with self._lock:
@@ -192,6 +202,7 @@ class MultiplayerArena:
             else:
                 self._broadcast(deepcopy(self._snapshot_locked()))
 
+    ## @brief US-09 y US-16: avanza el reloj y finaliza la partida aunque no haya movimientos.
     def tick(self, now: float | None = None) -> dict:
         # Requiere el bucle principal de US09: invoque este método periódicamente, por ejemplo cada 0,1 segundos, para detectar el final aunque nadie se mueva.
         # Requiere US13: la función de difusión debe enviar a todos los clientes las actualizaciones de tiempo y estado generadas por este método.
@@ -206,18 +217,21 @@ class MultiplayerArena:
             self._broadcast(deepcopy(state))
             return state
 
+    ## @brief US-13: devuelve una copia del estado actual para evitar cambios externos.
     def snapshot(self) -> dict:
         with self._lock:
             if self._final_result is not None:
                 return deepcopy(self._final_result)
             return deepcopy(self._snapshot_locked())
 
+    ## @brief Construye una instantánea del marcador, jugadores y reglas bajo bloqueo.
     def _snapshot_locked(self) -> dict:
         scores = self.scoreboard.scores()
         players = [dict(asdict(p), score=scores[p.player_id]) for p in self._players.values()]
         return dict(self._rule_state, type="arena_state", match_id=self.match_id,
                     players=players, scores=scores, active=self._active)
 
+    ## @brief US-16–US-17: congela y difunde el resultado final para el podio.
     def finish_match(self, rule_state: dict) -> dict:
         """
         Recibe la decisión final de US16, detiene los movimientos y envía a los clientes un resultado que puede entregarse a US17.
@@ -249,6 +263,7 @@ class MultiplayerArena:
             return deepcopy(result)
 
 
+## @brief US-06–US-07 y US-13: dibuja los avatares y nombres del estado compartido.
 def draw_players(screen, state: dict, avatar_images: dict, *, offset=(0, 0), size=40):
     """
     El cliente dibuja a los dos jugadores a partir del estado difundido por el servidor; no calcula movimientos ni puntajes.

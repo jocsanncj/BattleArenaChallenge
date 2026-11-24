@@ -18,6 +18,7 @@ MEDIA = Path(__file__).resolve().parents[1] / "Media"
 # La URL selecciona retratos para la ficha o personajes para la arena. El ID identifica el mismo PNG que
 # usa el escritorio. Si el navegador pide un personaje desconocido, Flask responde con 404.
 @movil.get("/movil/avatares/<any(retratos,personajes):tipo>/<avatar_id>.png")
+## @brief US-06 y US-30: sirve un retrato o personaje permitido del catálogo.
 def imagen_avatar(tipo, avatar_id):
     if avatar_id not in NOMBRES_PERSONAJES:
         abort(404)
@@ -27,6 +28,7 @@ def imagen_avatar(tipo, avatar_id):
 # El reproductor del móvil solicita esta URL al entrar en la arena. Flask sirve Orbital.wav desde Media
 # para que el navegador pueda reproducir la misma pista que el escritorio.
 @movil.get("/movil/audio/arena.wav")
+## @brief US-24 y US-30: sirve la pista de audio de la arena al navegador.
 def musica_arena():
     return send_from_directory(MEDIA, "Orbital.wav")
 
@@ -34,6 +36,7 @@ def musica_arena():
 # Al mostrar el podio, el reproductor pide esta URL. wav_celebracion prepara los bytes de la melodía
 # compartida y send_file los entrega como audio/wav desde memoria.
 @movil.get("/movil/audio/resultados.wav")
+## @brief US-17 y US-30: sirve la música de celebración del podio.
 def musica_resultados():
     return send_file(BytesIO(wav_celebracion()), mimetype="audio/wav", conditional=True)
 
@@ -41,6 +44,7 @@ def musica_resultados():
 # GET /movil prepara el HTML que abre el teléfono. Pasa la configuración pública a Firebase y convierte
 # el catálogo de personajes y mapas de escritorio en opciones y rutas que puede usar el navegador.
 @movil.get("/movil")
+## @brief US-30: renderiza el cliente móvil con configuración y catálogos del servidor.
 def inicio():
     # La plantilla muestra el nombre y el retrato. Al guardar un avatar del catálogo, US30 envía
     # a /api/game/avatar el ID de US06 que también identifica al personaje dentro de la arena.

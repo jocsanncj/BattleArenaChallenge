@@ -10,6 +10,7 @@ const estadosReactor = {
 // movil.js llama a esta función al abrir la página. canvas es la superficie de dibujo y urlJugador
 // es la función que busca la imagen de cada personaje. El catálogo de Flask indica cuántos píxeles
 // ocupa cada casilla. El objeto devuelto permite dibujar un estado nuevo o repintar el último.
+/** @brief US-07, US-20–US-23 y US-30: crea el renderizador móvil del estado de arena. */
 export function crearRenderArena(canvas, urlJugador) {
   const arte = JSON.parse(document.getElementById("arte-arena").textContent);
   const lado = arte.lado;
@@ -19,6 +20,7 @@ export function crearRenderArena(canvas, urlJugador) {
 
   // Busca la URL en imagenes, un Map que conserva un objeto Image por dirección. La primera llamada
   // inicia la descarga. Devuelve la imagen solo cuando tiene anchura y ha terminado de cargar.
+  /** @brief US-06 y US-30: carga y reutiliza imágenes de arena y jugadores. */
   function imagen(url) {
     if (!url) return;
     if (!imagenes.has(url)) {
@@ -34,6 +36,7 @@ export function crearRenderArena(canvas, urlJugador) {
 
   // Dibuja un borde circular en coordenadas de píxeles. El color y el grosor distinguen al jugador
   // local, los estados temporales y el reactor sin tapar la figura que está debajo.
+  /** @brief US-07 y US-30: dibuja un indicador circular sobre una casilla. */
   function aro(x, y, radio, color, grosor) {
     ctx.beginPath();
     ctx.arc(x, y, radio, 0, 2 * Math.PI);
@@ -44,6 +47,7 @@ export function crearRenderArena(canvas, urlJugador) {
 
   // Toma la fila y la columna de la entidad. Sumar media casilla sitúa el texto en el centro.
   // Las puertas usan un cuadrado y la energía usa un círculo con su símbolo.
+  /** @brief US-18–US-22 y US-30: dibuja un marcador temporal en una entidad del tablero. */
   function marca(entidad, texto, color, cuadrada = false) {
     const x = (entidad.x + .5) * lado, y = (entidad.y + .5) * lado;
     const radio = lado / 2 - 3;
@@ -62,6 +66,7 @@ export function crearRenderArena(canvas, urlJugador) {
   }
 
   // Lee el tipo y la posición del guardián recibidos del servidor para elegir la figura y su casilla.
+  /** @brief US-21 y US-30: dibuja un guardián usando el recurso del servidor. */
   function dibujarGuardian(guardian) {
     const sprite = imagen(arte.guardianes[guardian.tipo]);
     if (!sprite) { marca(guardian, "G", "#a74751"); return; }
@@ -73,6 +78,7 @@ export function crearRenderArena(canvas, urlJugador) {
   // El catálogo del mapa fija el centro del reactor. juego.reactor determina el color y la etiqueta,
   // y remaining_seconds da el tiempo de recarga. El tiempo de partida solo orienta los arcos
   // de luz en el dibujo. La disponibilidad para extraer energía la decide el servidor.
+  /** @brief US-18–US-19 y US-30: dibuja el reactor y su disponibilidad actual. */
   function dibujarReactor(mapaArte, tema, juego) {
     const [columna, fila] = mapaArte.centro;
     const x = (columna + .5) * lado, y = (fila + .5) * lado;
@@ -102,6 +108,7 @@ export function crearRenderArena(canvas, urlJugador) {
   // Recibe la lista de jugadores que envía la API e idPropio, el identificador de quien usa el móvil.
   // Primero pinta las figuras y guarda la posición de los nombres. Dibuja el texto al final
   // para que los personajes vecinos no lo tapen.
+  /** @brief US-06, US-10–US-11 y US-30: dibuja participantes y estados confirmados. */
   function dibujarJugadores(jugadores, idPropio) {
     const etiquetas = [];
     // forEach pasa cada jugador y su índice. El índice permite mostrar un número mientras carga
@@ -139,6 +146,7 @@ export function crearRenderArena(canvas, urlJugador) {
 
   // Redibuja el último estado recibido, tanto al cambiar el juego como al terminar de cargar una imagen.
   // Coloca el fondo y luego los objetos, guardianes, reactor y jugadores en ese orden.
+  /** @brief US-07, US-20–US-23 y US-30: vuelve a dibujar todos los elementos de la arena. */
   function repintar() {
     if (!ctx || !escena) return;
     const { mapa, juego, mapaArte, tema, idPropio } = escena;
@@ -186,6 +194,7 @@ export function crearRenderArena(canvas, urlJugador) {
     // Cada actualización entrega el plano, el estado del juego, las reglas de la sala y el ID local.
     // Sin juego o sin mapa oculta el lienzo. Con rotación cambia la paleta según los periodos
     // transcurridos, conserva el plano elegido y devuelve el nombre del tema para el indicador.
+    /** @brief US-07, US-23 y US-30: guarda y dibuja el mapa y estado actual de la partida. */
     dibujar(mapa, juego, configuracion = {}, idPropio) {
       if (!mapa || !juego) {
         escena = null;
@@ -202,9 +211,11 @@ export function crearRenderArena(canvas, urlJugador) {
       repintar();
       return arte.escenarios[tema].nombre;
     },
+    /** @brief US-30: redibuja el último estado al terminar de cargar un recurso gráfico. */
     repintar,
     // Al retirar el retrato de un participante o salir de la cuenta, elimina esa URL de la caché
     // de este lienzo. Una petición posterior de la misma imagen podrá cargarla de nuevo.
+    /** @brief US-06 y US-30: elimina de la caché una imagen que ya no se usa. */
     olvidarImagen(url) { imagenes.delete(url); },
   };
 }

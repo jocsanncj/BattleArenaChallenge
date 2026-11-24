@@ -22,6 +22,7 @@ LADO = 36
 # Recibe los índices de escenario y paleta. Convierte una copia del tablero Pygame en bytes PNG y calcula
 # su huella SHA-256. La caché reutiliza ambos valores cuando otro jugador solicita la misma combinación.
 @lru_cache(maxsize=len(MAPAS) * len(PALETAS))
+## @brief US-23 y US-30: renderiza el tablero compartido en memoria como PNG.
 def _tablero_png(escenario, tema):
     # Se dibuja sobre una copia para conservar intacta la superficie que comparte el escritorio.
     mapa = MAPAS[escenario]
@@ -36,6 +37,7 @@ def _tablero_png(escenario, tema):
 # La URL elige un escenario y un tema del catálogo. Si existen, la respuesta lleva el PNG y su huella (ETag).
 # Si el navegador envía la misma huella con If-None-Match, puede recibir 304 y reutilizar su copia local.
 @arte_movil.get("/movil/arena/tableros/<int:escenario>/<int:tema>.png")
+## @brief US-23 y US-30: obtiene o crea la URL de imagen del tablero solicitado.
 def imagen_tablero(escenario, tema):
     if escenario >= len(MAPAS) or tema >= len(PALETAS):
         abort(404)
@@ -46,6 +48,7 @@ def imagen_tablero(escenario, tema):
 # El móvil usa el tipo comunicado por la arena para pedir la imagen del perseguidor o del vigilante.
 # Ambos nombres identifican ficheros del juego. Cualquier otro tipo recibe un 404.
 @arte_movil.get("/movil/arena/guardianes/<tipo>.png")
+## @brief US-21 y US-30: devuelve la ruta de imagen de un guardián válido.
 def imagen_guardian(tipo):
     if tipo not in TIPOS_GUARDIAN:
         abort(404)
@@ -53,6 +56,7 @@ def imagen_guardian(tipo):
 
 
 @arte_movil.get("/movil/arena/puertas/<estado>.png")
+## @brief US-20 y US-30: devuelve la ruta de imagen de una puerta abierta o cerrada.
 def imagen_puerta(estado):
     if estado not in ("abierta", "cerrada"):
         abort(404)
@@ -60,6 +64,7 @@ def imagen_puerta(estado):
 
 
 @arte_movil.get("/movil/arena/trampas/<tipo>.png")
+## @brief US-20 y US-30: devuelve la ruta de imagen para el tipo de trampa.
 def imagen_trampa(tipo):
     if tipo not in TIPOS_TRAMPA:
         abort(404)
@@ -69,6 +74,7 @@ def imagen_trampa(tipo):
 # La plantilla de /movil llama a esta función y entrega el diccionario como JSON en arte-arena. El lienzo
 # usa el tamaño de casilla, el centro del reactor y las URL por escenario y tema para dibujar a escala.
 @arte_movil.app_template_global()
+## @brief US-20–US-23 y US-30: reúne rutas y metadatos visuales que usa el navegador.
 def catalogo_arte_arena():
     return {
         "lado": LADO,

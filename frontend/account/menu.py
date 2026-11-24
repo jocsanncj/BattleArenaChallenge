@@ -82,7 +82,7 @@ class MainMenuScene(BaseScene):
         # Configura los controles correspondientes a la nueva pantalla.
         self._configure_page()
 
-    ## @brief Configura campos y botones según el identificador de pantalla.
+    ## @brief US-01–US-04 y US-29: configura formularios, navegación y acciones de cuenta.
     ## @return None.
     def _configure_page(self):
         # Descarta los controles previos para evitar mostrar los de otra pantalla.
@@ -142,6 +142,7 @@ class MainMenuScene(BaseScene):
         if self.page in {"welcome", "menu"}:
             self._button(798, 22, 174, "Música · " + ("activa" if musica.activa else "apagada"), self._musica)
 
+    ## @brief Alterna la música de la interfaz y actualiza su control visual.
     def _musica(self):
         musica.alternar()
         self.status = musica.aviso
@@ -155,7 +156,7 @@ class MainMenuScene(BaseScene):
         self.user_name = nombre
         self._set_page("menu")
 
-    ## @brief Envía el formulario de registro y muestra el resultado al usuario.
+    ## @brief US-01 y US-02: registra la cuenta e informa el estado de verificación.
     ## @return None.
     def _registrar(self):
         # Extrae los cuatro campos en el orden configurado para el registro.
@@ -202,7 +203,7 @@ class MainMenuScene(BaseScene):
         else:
             self.status = "No se pudo abrir el navegador."
 
-    ## @brief Cuando el Future termina, recoge la sesión y el perfil del intento que sigue en pantalla.
+    ## @brief US-29: recoge la sesión de Google y abre el menú autenticado.
     ## @details Si el resultado contiene un error, lo muestra en el login. Si contiene el perfil, activa la sesión y abre el menú.
     def _finalizar_sesion_google(self, intento):
         # Si el jugador volvió atrás o abrió otro intento, esta pestaña ya no puede iniciar su sesión.
@@ -222,7 +223,7 @@ class MainMenuScene(BaseScene):
         self.current_user = perfil
         self._mostrar_menu(str(perfil["name"]))
 
-    ## @brief Envía credenciales e interpreta éxito, errores y fallos consecutivos.
+    ## @brief US-03: autentica con credenciales y gestiona errores y correo pendiente.
     ## @return None.
     def _iniciar_sesion(self):
         # Si el jugador elige la contraseña, descarta el intento de Google que seguía abierto.
@@ -289,7 +290,7 @@ class MainMenuScene(BaseScene):
             "Ábrelo para definir una contraseña nueva."
         )
 
-    ## @brief Solicita reenviar la verificación al usuario de la pantalla actual.
+    ## @brief US-02: solicita reenviar la verificación del correo.
     ## @return None.
     def _reenviar_verificacion(self):
         # Usa el nombre guardado o el último identificador de inicio de sesión.
@@ -304,7 +305,7 @@ class MainMenuScene(BaseScene):
             "Revisa también la carpeta de spam."
         )
 
-    ## @brief Solicita datos actualizados y abre la pantalla de perfil.
+    ## @brief US-04: consulta los datos actuales y prepara el perfil del jugador.
     ## @return None.
     def _abrir_perfil(self):
         # Recupera el perfil protegido por el token de sesión local.
@@ -322,6 +323,7 @@ class MainMenuScene(BaseScene):
             self.profile_avatar_label = "Avatar no disponible"
             self.status = f"No se pudo cargar el avatar del perfil: {error}"
 
+    ## @brief US-04 y US-06: prepara el retrato elegido, con respaldo predeterminado.
     def _crear_avatar_perfil(self):
         eleccion = self.current_user.get("avatar_selection")
         if not isinstance(eleccion, dict):
@@ -351,7 +353,7 @@ class MainMenuScene(BaseScene):
             NOMBRES_PERSONAJES["avatar_1"],
         )
 
-    ## @brief Abre las pantallas online dentro del ciclo de escenas del cliente.
+    ## @brief US-06 y US-09–US-11: abre el flujo online de avatar, sala y arena.
     ## @return None. Si ocurre un error de conexión, lo muestra en el menú.
     def _abrir_juego(self):
         from .online import JuegoOnlineScene
@@ -371,7 +373,7 @@ class MainMenuScene(BaseScene):
         self.failed_attempts = 0
         self._set_page("welcome")
 
-    ## @brief Prepara estadísticas, logros e historial en líneas de texto.
+    ## @brief US-04 y US-28: prepara estadísticas, logros e historial del perfil.
     ## @return Lista de líneas que se dibujarán dentro del área desplazable.
     def _profile_lines(self):
         # Comprueba la forma de los datos remotos antes de usarlos en la UI.
@@ -500,7 +502,7 @@ class MainMenuScene(BaseScene):
                 surface, line, first_y + index * line_height, font, color
             )
 
-    ## @brief Dibuja identidad y datos históricos dentro de un área desplazable.
+    ## @brief US-04 y US-28: dibuja identidad, avatar y datos históricos del perfil.
     ## @param surface Superficie donde se dibuja el perfil.
     ## @return None.
     def _draw_profile(self, surface):
@@ -627,12 +629,14 @@ class MainMenuScene(BaseScene):
             "recovery_sent",
         ):
             self._draw_message(surface, self.status, 555, self.small_font, ERROR)
+    ## @brief US-27: solicita el ranking global y abre su pantalla.
     def _abrir_ranking(self):
         try:
             self.ranking = obtener_ranking()
             self._set_page("ranking")
         except (OSError, RuntimeError, ValueError) as error:
             self.status = str(error)
+    ## @brief US-27: dibuja posiciones, puntos y victorias del ranking global.
     def _draw_ranking(self, surface):
         self._draw_centered(surface, "Ranking global", 70)
         viewport = pygame.Rect(80, 120, 740, 390)

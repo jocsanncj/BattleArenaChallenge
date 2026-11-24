@@ -57,6 +57,7 @@ class ServicioAvatar:
             para buscar un avatar rápidamente.
     """
 
+    ## @brief US-06: conecta el servicio de selección con el repositorio de avatares.
     def __init__(self, repositorio: RepositorioAvatares):
         """
         Descripción:
@@ -72,6 +73,7 @@ class ServicioAvatar:
             a.id: a for a in AVATARES_PREDETERMINADOS
         }
 
+    ## @brief US-06: devuelve el catálogo de avatares predeterminados.
     def listar_predeterminados(self) -> List[AvatarPredeterminado]:
         """
         Descripción:
@@ -84,6 +86,7 @@ class ServicioAvatar:
         """
         return list(AVATARES_PREDETERMINADOS)
 
+    ## @brief US-06: obtiene el avatar elegido o asigna el primero como valor inicial.
     def obtener_eleccion(self, id_usuario: int) -> EleccionAvatar:
         """
         Descripción:
@@ -99,6 +102,7 @@ class ServicioAvatar:
             "predeterminado", AVATARES_PREDETERMINADOS[0].id
         )
 
+    ## @brief US-06: carga o dibuja la imagen del avatar lista para Pygame.
     def obtener_superficie(self, id_usuario: int, tam: int = 64) -> pygame.Surface:
         """
         Descripción:
@@ -131,6 +135,7 @@ class ServicioAvatar:
         avatar = self._predeterminados.get(eleccion.valor, AVATARES_PREDETERMINADOS[0])
         return self.dibujar_predeterminado(avatar, tam)
 
+    ## @brief US-06: valida y guarda una selección del catálogo.
     def seleccionar_predeterminado(self, id_usuario: int, id_avatar: str) -> None:
         """
         Descripción:
@@ -146,6 +151,7 @@ class ServicioAvatar:
             raise ErrorApp("El avatar seleccionado no existe.")
         self._repo.guardar(id_usuario, EleccionAvatar("predeterminado", id_avatar))
 
+    ## @brief US-06: valida, recorta y persiste una imagen personalizada como PNG base64.
     def subir_personalizado(self, id_usuario: int, ruta_origen: str) -> None:
         """
         Descripción:
@@ -183,6 +189,7 @@ class ServicioAvatar:
             ),
         )
 
+    ## @brief US-06: recorta una imagen centrada y la escala a un cuadrado.
     @staticmethod
     def _cuadrar(imagen: pygame.Surface, tam: int) -> pygame.Surface:
         """
@@ -204,6 +211,7 @@ class ServicioAvatar:
         recorte = imagen.subsurface(((ancho - lado) // 2, (alto - lado) // 2, lado, lado)).copy()
         return pygame.transform.smoothscale(recorte, (tam, tam))
 
+    ## @brief US-06: dibuja una figura del catálogo en una superficie Pygame.
     @staticmethod
     def dibujar_predeterminado(avatar: AvatarPredeterminado, tam: int) -> pygame.Surface:
         """

@@ -45,6 +45,7 @@ class MapaArena:
             reactor.
     """
 
+    ## @brief US-07 y US-23: convierte filas de texto en una cuadrícula de casillas.
     def __init__(self, nombre: str, plano: Tuple[str, ...]):
         """
         Descripción:
@@ -81,6 +82,7 @@ class MapaArena:
                          if self._casillas[f][c] is Casilla.REACTOR]
 
     @property
+    ## @brief Devuelve el número de columnas del mapa.
     def columnas(self) -> int:
         """
         Descripción:
@@ -93,6 +95,7 @@ class MapaArena:
         return len(self._casillas[0])
 
     @property
+    ## @brief Devuelve el número de filas del mapa.
     def filas(self) -> int:
         """
         Descripción:
@@ -104,6 +107,7 @@ class MapaArena:
         """
         return len(self._casillas)
 
+    ## @brief US-11 y US-23: obtiene el tipo de casilla en una coordenada.
     def casilla_en(self, columna: int, fila: int) -> Casilla:
         """
         Descripción:
@@ -118,6 +122,7 @@ class MapaArena:
         """
         return self._casillas[fila][columna]
 
+    ## @brief US-11 y US-20: valida que una coordenada sea caminable.
     def es_transitable(self, columna: int, fila: int) -> bool:
         """
         Descripción:
@@ -134,6 +139,7 @@ class MapaArena:
         return (0 <= columna < self.columnas and 0 <= fila < self.filas
                 and self._casillas[fila][columna] in CASILLAS_TRANSITABLES)
 
+    ## @brief US-09: devuelve las coordenadas asignables al inicio de cada jugador.
     def puntos_inicio(self) -> List[Tuple[int, int]]:
         """
         Descripción:
@@ -147,6 +153,7 @@ class MapaArena:
         """
         return list(self._inicios)
 
+    ## @brief US-18–US-19: calcula el centro geométrico del reactor.
     def centro_reactor(self) -> Tuple[float, float]:
         """
         Descripción:
@@ -161,6 +168,7 @@ class MapaArena:
         """
         columnas, filas = [c for c, _ in self._reactor], [f for _, f in self._reactor]
         return (min(columnas) + max(columnas)) / 2, (min(filas) + max(filas)) / 2
+    ## @brief US-18–US-19: verifica si una casilla caminable está junto al reactor.
     def junto_al_reactor(self, columna: int, fila: int) -> bool:
         """Indica si una casilla transitable es adyacente al reactor."""
         if not self.es_transitable(columna, fila):

@@ -23,6 +23,7 @@ class PantallaConfiguracion(Pantalla):
 
     tecla_escape = "volver"
 
+    ## @brief US-08: prepara una copia editable de las reglas de la partida.
     def __init__(self, ctx: Contexto):
         """
         Descripción:
@@ -40,6 +41,7 @@ class PantallaConfiguracion(Pantalla):
         from frontend.escenarios import ConfiguracionEscenario
         self.cfg = ConfiguracionEscenario(**asdict(ctx.partida.obtener_partida().configuracion))
 
+    ## @brief US-08: determina el valor editable y sus límites según el modo de fin.
     def _campo_valor(self):
         """
         Descripción:
@@ -55,6 +57,7 @@ class PantallaConfiguracion(Pantalla):
             return "minutos_fin", "Minutos de la partida", 1, 60, 1
         return "puntos_fin", "Puntos para terminar", 1, 999, 5
 
+    ## @brief US-08: cambia un ajuste respetando su rango permitido.
     def _cambiar(self, campo: str, delta: int, minimo: int, maximo: int) -> None:
         """
         Descripción:
@@ -70,15 +73,18 @@ class PantallaConfiguracion(Pantalla):
         """
         setattr(self.cfg, campo, max(minimo, min(maximo, getattr(self.cfg, campo) + delta)))
 
+    ## @brief US-08: avanza al siguiente mapa y desactiva la rotación aleatoria.
     def _siguiente_mapa(self):
         if not self.cfg.rotacion:
             self.cfg.escenario = (self.cfg.escenario + 1) % len(MAPAS)
 
         self.cfg.rotacion = False
 
+    ## @brief US-08: activa la rotación aleatoria de mapas.
     def _aleatorio(self):
         self.cfg.rotacion = True
 
+    ## @brief US-08: alterna entre finalizar por tiempo o por puntos.
     def _alternar_modo(self) -> None:
         """
         Descripción:
@@ -90,6 +96,7 @@ class PantallaConfiguracion(Pantalla):
         """
         self.cfg.modo_fin = "puntos" if self.cfg.modo_fin == "tiempo" else "tiempo"
 
+    ## @brief US-08: valida y guarda los ajustes mediante el servicio de partida.
     def _guardar(self) -> None:
         """
         Descripción:
@@ -108,6 +115,7 @@ class PantallaConfiguracion(Pantalla):
         else:
             self.exito("Configuración guardada.")
 
+    ## @brief US-08: crea controles para editar y guardar las reglas.
     def botones(self) -> List[Boton]:
         """
         Descripción:
@@ -132,6 +140,7 @@ class PantallaConfiguracion(Pantalla):
             Boton(pygame.Rect(60, 350, 200, 40), "Guardar", self._guardar, EXITO),
             Boton(pygame.Rect(280, 350, 200, 40), "Volver", lambda: "volver", GRIS)]
 
+    ## @brief US-08: dibuja los valores actuales, el mapa y los controles.
     def dibujar(self, superficie) -> None:
         """
         Descripción:

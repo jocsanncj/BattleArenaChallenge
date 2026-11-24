@@ -8,6 +8,7 @@ from copy import deepcopy
 import math
 
 
+## @brief US-16–US-17: ordena a los jugadores para presentar las posiciones finales.
 def podio_final(jugadores: list[dict]) -> list[dict]:
     """Ordena el podio por puntos y desempata los puestos restantes por nombre."""
     # Servidor y escritorio pasan las fichas con su puntaje final. Cada copia recibe position desde 1.
@@ -27,6 +28,7 @@ class GameRules:
     OVERTIME_SECONDS = 120
     _EPSILON = 1e-9
 
+    ## @brief US-08 y US-16: configura el límite de tiempo o puntos y la prórroga.
     def __init__(self, mode: str = "time", duration_seconds: int = 60,
                  target_score: int = 20, overtime_seconds: int = 120) -> None:
         # Requiere US08: proporcionar el modo de finalización, el tiempo y el puntaje objetivo seleccionados al iniciar.
@@ -53,6 +55,7 @@ class GameRules:
         self._last_scores: dict[str, int] = {}
         self._final_state: dict | None = None
 
+    ## @brief US-09 y US-16: inicia el reloj de la partida una sola vez.
     def start(self, now: float) -> None:
         """
         El proceso de inicio llama una sola vez para establecer el reloj de esta partida.
@@ -65,6 +68,7 @@ class GameRules:
         self._last_now = float(now)
         self._deadline = float(self.duration_seconds) if self.mode == "time" else None
 
+    ## @brief US-15–US-16: actualiza el reloj, evalúa el final y devuelve el estado.
     def update(self, scores: dict[str, int], now: float) -> dict:
         """
         Comprueba el tiempo y los puntos, y devuelve una copia del estado actual; el resultado no cambia tras finalizar.
@@ -79,6 +83,7 @@ class GameRules:
             self._evaluate(self._last_scores)
         return self._state()
 
+    ## @brief US-10 y US-16: pausa el reloj cuando se desconecta un jugador.
     def pause(self, now: float) -> None:
         """
         Pausa cuando US10 detecta una desconexión y conserva el tiempo transcurrido hasta entonces.
@@ -92,6 +97,7 @@ class GameRules:
         if self.status != "finished":
             self.paused = True
 
+    ## @brief US-10 y US-16: reanuda el reloj tras reconectar al jugador.
     def resume(self, now: float) -> None:
         """
         Reanuda cuando US10 confirma la reconexión del mismo jugador; la desconexión no cuenta como tiempo de juego.
@@ -103,6 +109,7 @@ class GameRules:
             self.paused = False
             self._last_now = float(now)
 
+    ## @brief US-15–US-16: valida que los puntajes sean enteros no negativos.
     @staticmethod
     def _validate_scores(scores: dict[str, int]) -> None:
         if not isinstance(scores, dict):
@@ -113,6 +120,7 @@ class GameRules:
             if type(value) is not int or value < 0:
                 raise ValueError("Los puntajes deben ser enteros no negativos.")
 
+    ## @brief US-16: valida que el reloj use valores finitos y monotónicos.
     def _validate_now(self, now: float) -> None:
         if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
             raise ValueError("El reloj debe proporcionar un tiempo finito.")
@@ -120,12 +128,14 @@ class GameRules:
             raise ValueError("El reloj debe ser monotónico.")
         self._observed_now = float(now)
 
+    ## @brief US-16: acumula el tiempo activo sin contar pausas.
     def _advance_clock(self, now: float) -> None:
         self._validate_now(now)
         if self.status in {"running", "overtime"} and not self.paused:
             self._elapsed += max(0.0, float(now) - self._last_now)
         self._last_now = float(now)
 
+    ## @brief US-16: determina ganador, empate o prórroga según la configuración.
     def _evaluate(self, scores: dict[str, int]) -> None:
         if self.status not in {"running", "overtime"} or len(scores) < 2:
             return
@@ -158,6 +168,7 @@ class GameRules:
         self.overtime_count += extra_rounds
         self._deadline += extra_rounds * self.OVERTIME_SECONDS
 
+    ## @brief US-16–US-17: fija el resultado final para que no vuelva a cambiar.
     def _finish(self, winner_id: str, boundary: float) -> None:
         self.status = "finished"
         self.paused = False
@@ -166,6 +177,7 @@ class GameRules:
         # Entregar a US17 para mostrar la ventana de victoria.
         self._final_state = self._state()
 
+    ## @brief US-16–US-17: genera la representación pública del estado de reglas.
     def _state(self) -> dict:
         remaining = None
         if self._deadline is not None:

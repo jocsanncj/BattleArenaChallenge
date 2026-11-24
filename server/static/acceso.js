@@ -18,6 +18,7 @@ const credencialesInvalidas = new Set(["auth/invalid-credential", "auth/wrong-pa
 
 // El formulario pasa aquí los fallos de acceso. Los códigos de Firebase distinguen una ventana cancelada, un dominio
 // sin autorizar o una cuenta bloqueada. Un HTTP 503 del juego tiene su propio aviso para indicar qué servicio falló.
+/** @brief US-01–US-05 y US-29–US-30: traduce errores de autenticación en mensajes para la interfaz. */
 function mensajeError(error) {
   if (error.estado === 503) return "El servidor del juego todavía no puede verificar la sesión. Contacta al equipo que lo aloja.";
   if (error.code) return erroresFirebase[error.code] || "Firebase no pudo completar la solicitud. Inténtalo de nuevo.";
@@ -27,6 +28,7 @@ function mensajeError(error) {
 
 // US30 conecta los formularios de registro y verificación (US01–02), contraseña (US03), recuperación (US05) y Google (US29).
 // movil.js entrega pedir para consultar la API y tres funciones para abrir la ficha, liberar la plaza y limpiar la cuenta.
+/** @brief US-01–US-05 y US-29–US-30: configura registro, acceso y recuperación en móvil. */
 export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarCuenta }) {
   // Busca los controles de acceso por el identificador que tienen en el HTML.
   const elemento = id => document.getElementById(id);
@@ -43,6 +45,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Se ejecuta al empezar o terminar una acción. Mientras ocupado sea true bloquea todos los botones de acceso y el de salir.
   // Cuando queda libre el panel, los botones data-remoto siguen esperando a que auth esté listo.
+  /** @brief US-01–US-05 y US-29–US-30: habilita controles según la conexión y acción pendiente. */
   function controles() {
     for (const boton of panel.querySelectorAll("button")) {
       boton.disabled = ocupado || (boton.hasAttribute("data-remoto") && !auth);
@@ -52,6 +55,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Al abrir un formulario o reintentar, descarga los módulos de Firebase. carga guarda la promesa compartida
   // para evitar otra descarga si se cambia de pantalla mientras llega la primera. Al terminar vuelve a evaluar los controles.
+  /** @brief US-01–US-05 y US-29–US-30: carga Firebase Auth de forma diferida. */
   async function conectar() {
     if (!config.apiKey) {
       estado.textContent = "El servidor todavía no tiene configurado el acceso de Firebase.";
@@ -86,6 +90,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Recibe el id de la sección de destino y un mensaje opcional. Oculta las demás secciones y mueve el foco al título
   // para que el teclado y el lector de pantalla sigan la navegación. Solo los formularios que usan Firebase inician la conexión.
+  /** @brief US-01–US-05 y US-29–US-30: muestra una pantalla de acceso y gestiona su foco. */
   function mostrar(destino, mensaje = "") {
     vista = destino;
     for (const seccion of panel.querySelectorAll("section")) seccion.hidden = seccion.id !== destino;
@@ -97,6 +102,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Recibe una función, la ejecuta una sola vez mientras los botones están bloqueados y espera su resultado con await.
   // Si falla, escribe en el panel visible. finally vuelve a habilitar los controles tanto en caso de éxito como de error.
+  /** @brief US-01–US-05 y US-29–US-30: ejecuta una acción de formulario sin duplicar envíos. */
   async function ejecutar(accion) {
     if (ocupado) return;
     ocupado = true;
@@ -133,6 +139,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Al preparar la página, asocia cada id de formulario con la función que procesa sus datos. La misma conexión sirve
   // tanto al botón de enviar como a la tecla Intro, ya que ambos generan el evento submit.
+  /** @brief US-01–US-05 y US-29–US-30: conecta el envío de un formulario con su caso de uso. */
   function alEnviar(id, accion) {
     // Intercepta el envío para procesarlo en esta página sin recargar el navegador.
     elemento(id).addEventListener("submit", evento => {
@@ -143,6 +150,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Login y recuperación aceptan usuario o correo. Para un nombre consulta /api/correo y URLSearchParams lo codifica para la URL.
   // El formulario que llamó a la función decide qué mostrar si la búsqueda no trae correo.
+  /** @brief US-03 y US-30: convierte nombre de usuario o correo en la dirección para autenticación. */
   async function resolverCorreo(identificador) {
     const valor = identificador.trim();
     if (!valor) throw new Error("Escribe tu usuario o correo electrónico.");
@@ -152,6 +160,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // El formulario de contraseña llama a esta función tras un identificador desconocido o credenciales rechazadas.
   // Al tercer fallo reinicia el contador y pasa el identificador a recuperación para que el jugador no tenga que repetirlo.
+  /** @brief US-03 y US-30: cuenta fallos de acceso y ofrece recuperación tras tres intentos. */
   function credencialesRechazadas() {
     intentos++;
     if (intentos < 3) {
@@ -164,6 +173,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
   }
 
   // Recibe el usuario devuelto por Firebase y, para Google, la señal que permite crear un perfil en el primer ingreso.
+  /** @brief US-04, US-29 y US-30: abre el perfil del jugador tras autenticarlo. */
   async function entrarAlJuego(usuario, google = false) {
     // abrirCuenta en movil.js recupera o crea el perfil del juego (US04). Solo al completar ese paso
     // se oculta el formulario, se reinicia el contador de fallos y se muestra la opción de cerrar sesión.
@@ -219,6 +229,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Registro y reintentos de alta validan el nombre antes de enviarlo. Array.from cuenta puntos de código de Unicode
   // y el signo @ se reserva para distinguir los correos de los nombres de jugador en el formulario de acceso.
+  /** @brief US-01 y US-30: valida el nombre de usuario antes de crear el perfil. */
   function validarNombre(nombre) {
     if (!nombre || nombre.includes("@") || Array.from(nombre).length > 40) {
       throw new Error("Elige un nombre de 1 a 40 caracteres sin @.");
@@ -227,6 +238,7 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
 
   // Sirve al primer registro y al reenvío. Con un nombre pendiente, actualiza el nombre visible en Firebase y guarda el perfil
   // en el juego con el token del mismo usuario. Solo tras un guardado correcto pide enviar el enlace de verificación.
+  /** @brief US-02 y US-30: guarda el perfil pendiente y solicita el correo de verificación. */
   async function enviarVerificacion() {
     const usuario = auth.currentUser;
     if (!usuario) throw new Error("Vuelve a iniciar sesión para reenviar el enlace.");

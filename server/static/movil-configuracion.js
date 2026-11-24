@@ -2,6 +2,7 @@
 // movil.js proporciona tres funciones. pedir envía solicitudes a la API, jugadorActual identifica
 // la cuenta abierta y actualizar solicita el estado de la sala tras guardar. El objeto devuelto
 // permite ajustar la edición cada vez que llega un estado de partida.
+/** @brief US-08 y US-30: conecta el editor móvil con la configuración validada por el servidor. */
 export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
   const panel = document.getElementById("opciones-configuracion");
   const form = document.getElementById("form-configuracion");
@@ -15,6 +16,7 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
 
   // Al abrir el formulario o cambiar el modo de fin se muestra solo el límite elegido. El otro campo
   // queda deshabilitado. Al guardar se conserva su valor anterior por si la sala vuelve a ese modo.
+  /** @brief US-08 y US-30: muestra y habilita el límite de la partida seleccionado. */
   function mostrarLimite() {
     const porTiempo = campos.modo_fin.value === "tiempo";
     document.getElementById("cfg-limite-tiempo").hidden = !porTiempo;
@@ -25,6 +27,7 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
 
   // Cierra el formulario y cambia aria-expanded para que los lectores de pantalla anuncien el panel cerrado.
   // Cerrar solo modifica la interfaz del móvil.
+  /** @brief US-08 y US-30: cierra el editor de configuración y actualiza su estado accesible. */
   function cerrar() {
     form.hidden = true;
     editar.setAttribute("aria-expanded", "false");

@@ -43,6 +43,7 @@ _GAME_FIREBASE_UIDS = {}
 
 # Al verificar el primer token, carga la cuenta de servicio desde FIREBASE_ADMIN_CREDENTIALS o el archivo local.
 # El bloqueo evita inicializar dos veces Firebase Admin si llegan dos solicitudes a la vez.
+## @brief US-01–US-05 y US-29: inicializa Firebase Admin una sola vez para validar sesiones.
 def _firebase_app():
     with _lock:
         try:
@@ -62,12 +63,14 @@ def _firebase_app():
 
 
 # Flask envuelve con este decorador las rutas que necesitan identificar al jugador antes de ejecutar la acción.
+## @brief US-01–US-05 y US-29: protege una ruta verificando el token Bearer de Firebase.
 def requiere_sesion(f):
     """Valida el token Bearer y le pasa los claims a la ruta."""
     # Lee el ID token de la cabecera Authorization, comprueba su validez y si fue revocado. Entrega a la ruta
     # el UID y el correo confirmados por Firebase. Un token inválido detiene la petición antes de consultar el juego.
     @wraps(f)
     def interior(*args, **kwargs):
+        """@brief Verifica la identidad y entrega los claims validados a la ruta."""
         esquema, _, token = request.headers.get("Authorization", "").partition(" ")
         if esquema.casefold() != "bearer" or not token:
             raise PermissionError("Inicia sesión para consultar el perfil.")
@@ -83,43 +86,54 @@ def requiere_sesion(f):
 
 # --- Errores: se declaran una vez, Flask elige el más específico ---
 @app.errorhandler(ForbiddenOperation)
+## @brief Convierte una operación prohibida en una respuesta HTTP 403.
 def _403(e): return jsonify(error=str(e)), 403
 
 @app.errorhandler(PermissionError)
+## @brief Convierte una sesión ausente o inválida en una respuesta HTTP 401.
 def _401(e): return jsonify(error=str(e)), 401
 
 @app.errorhandler(ValueError)
+## @brief Convierte datos de solicitud inválidos en una respuesta HTTP 400.
 def _400(e): return jsonify(error=str(e)), 400
 
 @app.errorhandler(UserNotFound)
+## @brief Convierte la ausencia de un perfil en una respuesta HTTP 404.
 def _404(e): return jsonify(error=str(e)), 404
 
 @app.errorhandler(DuplicateUsername)
 @app.errorhandler(DuplicateEmail)
+## @brief Convierte conflictos de nombre o correo duplicado en HTTP 409.
 def _409(e): return jsonify(error=str(e)), 409
 
 @app.errorhandler(RepositoryError)
+## @brief Convierte fallos de persistencia en una respuesta HTTP 500.
 def _500(e): return jsonify(error="No se pudo completar la operación."), 500
 
 @app.errorhandler(RuntimeError)
+## @brief Informa indisponibilidad de servicios requeridos mediante HTTP 503.
 def _503(e): return jsonify(error=str(e)), 503
 
 
 # --- Rutas ---
 @app.get("/health")
+## @brief Comprueba que la API está activa; lo usa el despliegue para health checks.
 def health():
     return {"status": "ok"}
 
 @app.get("/api/disponible")
+## @brief US-01–US-03: comprueba si un nombre de usuario puede registrarse.
 def disponible():
     return {"disponible": repo.nombre_disponible(request.args.get("nombre", "").strip())}
 
 @app.get("/api/correo")
+## @brief US-03: resuelve el correo asociado a un nombre para iniciar sesión.
 def correo():
     return {"correo": repo.correo_de(request.args.get("nombre", "").strip())}
 
 @app.get("/api/profile")
 @requiere_sesion
+## @brief US-01–US-05: devuelve el perfil de la cuenta autenticada y verificada.
 def leer_perfil(claims):
     if claims.get("email_verified") is not True:
         raise PermissionError("Verifica tu correo para consultar el perfil.")
@@ -130,6 +144,7 @@ def leer_perfil(claims):
 # avatar_selection de US04 para mostrar el retrato del catálogo o la imagen que subió el jugador.
 @app.post("/api/profile")
 @requiere_sesion
+## @brief US-01–US-05 y US-29: crea o actualiza el perfil de la cuenta autenticada.
 def guardar_perfil(claims):
     formulario = request.get_json(silent=True)
     if not isinstance(formulario, dict):
@@ -154,6 +169,7 @@ def guardar_perfil(claims):
     return {"user": _perfil_con_avatar(claims)} #Avatar visible
 
 @app.get("/api/ranking")
+## @brief US-27–US-28: devuelve la clasificación global persistida.
 def obtener_ranking():
     return jsonify(ranking=repo.obtener_ranking())
 
@@ -171,14 +187,17 @@ _RESULTADOS_RECIENTES = {}
 _MOVE_TIMES = {}
 _REACTOR = {"available_at": 0.0,"active": None,"events": set(),}
 
+## @brief US-06–US-10: deriva un identificador de juego estable del UID autenticado.
 def _id_jugador(claims):
     """Convierte el UID de Firebase en un entero estable compatible con el modelo de juego."""
     return int.from_bytes(hashlib.sha256(claims["uid"].encode("utf-8")).digest()[:4], "big") & 0x7fffffff
 
+## @brief US-06–US-10: representa la identidad de juego sin exponer el UID de Firebase.
 def _player_id(claims):
     """Usa el identificador estable del modelo de sala sin exponer el UID de Firebase."""
     return str(_id_jugador(claims))
 #Carga avatar en el perfil
+## @brief US-04 y US-06: incorpora al perfil el avatar persistido de la cuenta.
 def _perfil_con_avatar(claims):
     """Incluye en el perfil la elección de avatar persistida para la cuenta autenticada."""
     perfil = repo.obtener(claims["uid"], claims["email_verified"]).to_dict()
@@ -209,6 +228,7 @@ def _perfil_con_avatar(claims):
     )
     return perfil
 
+## @brief US-08–US-10: crea la estructura inicial de una sala sin jugadores.
 def _partida_vacia():
     return {
         "configuracion": {
@@ -222,6 +242,7 @@ def _partida_vacia():
         "jugadores": [],
     }
 
+## @brief US-06–US-10: carga y valida el estado compartido de sala y avatares.
 def _leer_estado_juego():
     if not _GAME_FILE.exists():
         return {"avatares": {}, "partida": _partida_vacia()}
@@ -237,18 +258,21 @@ def _leer_estado_juego():
         raise RuntimeError("El estado guardado de la sala no tiene un formato válido.")
     return contenido
 
+## @brief US-06–US-10: persiste de forma atómica el estado compartido del juego.
 def _guardar_estado_juego(estado):
     datos.mkdir(parents=True, exist_ok=True)
     temporal = _GAME_FILE.with_suffix(".tmp")
     temporal.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
     os.replace(temporal, _GAME_FILE)
 
+## @brief US-01–US-05: exige correo verificado y obtiene la identidad del jugador.
 def _validar_jugador(claims):
     if claims.get("email_verified") is not True:
         raise PermissionError("Verifica tu correo para jugar online.")
     jugador = repo.obtener(claims["uid"], True)
     return _id_jugador(claims), _player_id(claims), jugador.nombre
 
+## @brief US-18–US-19: completa una extracción válida y aplica su puntaje.
 def _actualizar_reactor(estado, ahora):
     interaccion = _REACTOR["active"]
     if interaccion is None:
@@ -283,6 +307,7 @@ def _actualizar_reactor(estado, ahora):
     _REACTOR["active"] = None
     _REACTOR["available_at"] = ahora + 4.0
 
+## @brief US-18–US-19 y US-22: describe disponibilidad, recarga o bloqueo del reactor.
 def _estado_reactor(ahora):
     if _GAME_EVENTOS is not None and _GAME_EVENTOS.sobrecarga_activa(ahora):
         return {"status": "sobrecargado", "remaining_seconds": 0.0}
@@ -303,6 +328,7 @@ def _estado_reactor(ahora):
 
 # Recibe la instantánea de la arena. Al terminar, relaciona cada player_id con su cuenta de Firebase
 # para guardar el resultado y recuperar sus marcas personales. Ambos clientes reciben los mismos puestos.
+## @brief US-16–US-17 y US-27–US-28: consolida el resultado y construye el podio persistido.
 def _persistir_resultado_partida(estado):
     if estado.get("status") != "finished":
         return
@@ -353,6 +379,7 @@ def _persistir_resultado_partida(estado):
 
 # Devuelve None mientras no hay arena. Durante la partida avanza el reloj y reúne el estado del reactor,
 # los obstáculos y los guardianes para que ambos clientes dibujen las posiciones que confirmó el servidor.
+## @brief US-09–US-24: avanza los sistemas de juego y devuelve el estado autoritativo.
 def _estado_arena():
     if _GAME_ARENA is None:
         return None
@@ -434,6 +461,7 @@ def _estado_arena():
 
 # Recibe las selecciones guardadas y el ID del participante. Devuelve la clave del catálogo o, para una
 # imagen propia, personalizado-<id>. Así el móvil identifica el retrato sin repetir sus bytes en cada sondeo.
+## @brief US-06: convierte una elección guardada en el identificador de avatar de la partida.
 def _avatar_en_partida(avatares, id_usuario):
     eleccion = avatares.get(str(id_usuario)) or {}
     if eleccion.get("tipo") == "personalizado":
@@ -444,6 +472,7 @@ def _avatar_en_partida(avatares, id_usuario):
 
 # Al iniciar la partida convierte la sala guardada en una arena de dos o tres jugadores con sus reglas y mapa.
 # Cada participante entra con su ID, su nombre y el mismo avatar que el móvil mostró en la espera.
+## @brief US-08–US-10 y US-20–US-24: crea la arena con reglas, mapa y sistemas seleccionados.
 def _iniciar_arena(partida):
     global _GAME_ARENA, _GAME_OBSTACULOS, _GAME_GUARDIANES, _GAME_EVENTOS, _GAME_USERS, _GAME_PLAYER_IDS, _MOVE_TIMES, _REACTOR
     jugadores = partida.get("jugadores", [])
@@ -495,6 +524,7 @@ def _iniciar_arena(partida):
 
 @app.post("/api/game/reactor")
 @requiere_sesion
+## @brief US-18–US-19: inicia o cancela una extracción validada por el servidor.
 def interactuar_con_reactor(claims):
     _, player_id, _ = _validar_jugador(claims)
     datos = request.get_json(silent=True)
@@ -555,6 +585,7 @@ def interactuar_con_reactor(claims):
 
 @app.get("/api/game/avatar")
 @requiere_sesion
+## @brief US-06 y US-30: devuelve la elección de avatar del jugador autenticado.
 def leer_avatar_juego(claims):
     """Devuelve el avatar guardado del jugador solicitado; requiere sesión verificada."""
     if claims.get("email_verified") is not True:
@@ -568,6 +599,7 @@ def leer_avatar_juego(claims):
 
 @app.put("/api/game/avatar")
 @requiere_sesion
+## @brief US-06 y US-30: guarda el avatar seleccionado por el jugador autenticado.
 def guardar_avatar_juego(claims):
     """Guarda el avatar del usuario autenticado, sin permitir elegir el ID de otra cuenta."""
     if claims.get("email_verified") is not True:
@@ -596,6 +628,7 @@ _PLANOS = [
 
 @app.get("/api/game/state")
 @requiere_sesion
+## @brief US-09–US-31: devuelve sala, mapa, estado compartido y resultado autorizado.
 def leer_partida_juego(claims):
     """Devuelve la sala y el estado de juego producido por el servidor."""
     # El sondeo del móvil recibe la sala, el mapa y la partida si ya empezó. jugador_actual_id permite
@@ -633,6 +666,7 @@ def leer_partida_juego(claims):
 
 @app.post("/api/game/join")
 @requiere_sesion
+## @brief US-09–US-10: añade o reconecta al jugador autenticado en la sala.
 def unirse_partida_juego(claims):
     """Une al usuario autenticado a la sala; la identidad nunca se toma del cuerpo HTTP."""
     user_id, player_id, nombre = _validar_jugador(claims)
@@ -685,6 +719,7 @@ def unirse_partida_juego(claims):
 
 @app.post("/api/game/leave")
 @requiere_sesion
+## @brief US-10 y US-17: desconecta al jugador y libera la sala al salir el último.
 def salir_partida_juego(claims):
     """Retira al jugador autenticado; una desconexión durante la partida la pausa."""
     user_id, player_id, _ = _validar_jugador(claims)
@@ -717,6 +752,7 @@ def salir_partida_juego(claims):
 
 @app.put("/api/game/config")
 @requiere_sesion
+## @brief US-08 y US-23: valida y guarda la configuración de una sala aún no iniciada.
 def guardar_configuracion_juego(claims):
     """Actualiza solo la configuración permitida de la sala, nunca el estado de juego."""
     user_id, _, _ = _validar_jugador(claims)
@@ -757,6 +793,7 @@ def guardar_configuracion_juego(claims):
 
 @app.post("/api/game/start")
 @requiere_sesion
+## @brief US-09–US-10: inicia la partida cuando hay suficientes jugadores registrados.
 def iniciar_partida_juego(claims):
     """Inicia una arena autoritativa con dos jugadores ya registrados en la sala."""
     user_id, _, _ = _validar_jugador(claims)
@@ -779,6 +816,7 @@ def iniciar_partida_juego(claims):
 
 @app.post("/api/game/move")
 @requiere_sesion
+## @brief US-11, US-20–US-22: valida el movimiento y aplica obstáculos y eventos.
 def mover_jugador_juego(claims):
     """Valida y aplica un paso de movimiento sin otorgar puntos por caminar."""
     _, player_id, _ = _validar_jugador(claims)

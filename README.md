@@ -6,7 +6,20 @@ Videojuego multijugador para computadora (Python y Pygame) y navegador móvil. A
 
 **Estado actual:** registro e inicio de sesión con Firebase y partidas online para dos o tres jugadores. El servidor valida los movimientos y las extracciones del reactor, mantiene los puntajes y determina el resultado; los clientes consultan el estado por HTTP. Al consolidar el resultado, cada cliente abre una ceremonia con podio, duración, avatares y récords personales.
 
-La documentación de arquitectura y los diagramas compatibles con Azure DevOps Wiki están en [docs/Arquitectura-Azure-Wiki.md](docs/Arquitectura-Azure-Wiki.md).
+## Documentación del proyecto
+
+### Documentos formales de entrega
+
+- [Arquitectura formal](docs/Arquitectura-Formal-Battle-Arena-Challenge.pdf)
+- [Modelo de datos](docs/Modelo-de-Datos-Battle-Arena-Challenge1.1.pdf)
+- [API y protocolos](docs/API%20y%20protocolos.pdf)
+- [Manual de usuario](docs/Manual%20de%20Usuario%20Battle%20Arena%20Challenge.pdf)
+- [Documento de atributos de calidad](docs/Documento%20de%20atributos.pdf)
+- [Matriz de trazabilidad](docs/Matriz%20de%20trazabilidad.xlsx)
+- [Documento de pruebas](docs/Documento%20de%20pruebas.xlsx)
+- [Registro de incidencias y decisiones técnicas](docs/Registro-Incidencias-y-Decisiones-Tecnicas.pdf)
+- [Retrospectiva final del proyecto](docs/Retrospectiva-Final.md)
+- [Retrospectiva final del proyecto (PDF)](docs/Retrospectiva-Final.pdf)
 
 ---
 
@@ -408,8 +421,9 @@ persistencia del perfil, en `backend/`. El cliente de escritorio se inicia con `
 
 ## 13. Flujo de trabajo con Git
 
-- Ramas: `main` (estable) ← `develop` (integración) ← `feature/<nombre>` (cada tarea).
-- Trabaja en tu rama `feature/...`, haz commits pequeños y abre un **Pull Request** hacia `develop`.
+- Ramas: `main` (estable) ← `Develop` (integración) ← ramas de trabajo por funcionalidad o corrección.
+- Integra cambios mediante **Pull Requests** hacia `Develop`; revisa las pruebas de CI antes de completar el PR.
+- Para preparar una entrega estable, abre un **Pull Request** de `Develop` hacia `main` y verifica la ejecución de CI.
 - Antes de abrir el Pull Request, corre las pruebas (sección 9).
 - No hagas commit de `.env`, `firebase-admin.json`, `.venv/`, `data/` ni de la documentación generada en `html/`.
 

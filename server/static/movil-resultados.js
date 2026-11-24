@@ -5,12 +5,14 @@ let partidaMostrada;
 
 // Recibe el score numérico de un jugador y devuelve el texto que usan tanto el anuncio del ganador
 // como las tarjetas. Uno se muestra en singular, por ejemplo «1 punto».
+/** @brief US-17 y US-30: convierte una cantidad en el texto de puntos visible. */
 function puntos(cantidad) {
   return cantidad === 1 ? "1 punto" : `${cantidad} puntos`;
 }
 
 // Construye el elemento que pide la tarjeta y le asigna la clase CSS. textContent trata el nombre
 // o el puntaje como texto visible. Quien llama recibe el nodo y decide dónde insertarlo.
+/** @brief US-17 y US-30: crea un nodo de texto con la clase indicada. */
 function texto(etiqueta, clase, valor) {
   const nodo = document.createElement(etiqueta);
   nodo.className = clase;
@@ -21,6 +23,7 @@ function texto(etiqueta, clase, valor) {
 // Recibe un participante del resultado confirmado y devuelve un elemento de lista para su puesto.
 // score es el puntaje de esta partida y personal_record es su mejor marca. new_record indica
 // si esta partida la mejoró. La imagen queda preparada para completarse cuando haya retrato.
+/** @brief US-17 y US-30: construye la tarjeta del jugador para el podio final. */
 function tarjeta(jugador) {
   const puesto = document.createElement("li");
   const retrato = document.createElement("span");
@@ -43,6 +46,7 @@ function tarjeta(jugador) {
 
 // Recibe el elemento img, el jugador y la URL disponible en este momento. Si falta la URL,
 // muestra la inicial. Si después llega el retrato personal, cambia ese elemento sin rehacer el podio.
+/** @brief US-06, US-17 y US-30: actualiza el retrato o muestra la inicial del jugador. */
 function actualizarRetrato(img, jugador, url) {
   const inicial = img.previousElementSibling;
   inicial.textContent = Array.from(jugador.username)[0] || "·";
@@ -55,6 +59,7 @@ function actualizarRetrato(img, jugador, url) {
 // movil.js entrega el resultado de esta partida o el resultado anterior recuperado en un sondeo.
 // retratoDe busca la imagen de cada jugador. Se devuelve true al mostrar el podio y false al ocultarlo.
 // US17 y US30 toman el ganador y los puestos del servidor. Una prórroga mantiene oculto el podio.
+/** @brief US-17 y US-30: muestra el resultado persistido y el podio en el navegador. */
 export function mostrarResultados(juego, retratoDe) {
   // Exige un resultado guardado y terminado. find devuelve el jugador cuyo ID coincide con winner_id
   // y cuyo puesto es 1. Si falta alguna condición se oculta el resultado que pudiera quedar en pantalla.
