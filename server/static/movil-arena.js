@@ -33,7 +33,6 @@ export function crearRenderArena(canvas, urlJugador) {
     const sprite = imagenes.get(url);
     return sprite.complete && sprite.naturalWidth ? sprite : undefined;
   }
-
   // Dibuja un borde circular en coordenadas de píxeles. El color y el grosor distinguen al jugador
   // local, los estados temporales y el reactor sin tapar la figura que está debajo.
   /** @brief US-07 y US-30: dibuja un indicador circular sobre una casilla. */
@@ -44,7 +43,6 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.lineWidth = grosor;
     ctx.stroke();
   }
-
   // Toma la fila y la columna de la entidad. Sumar media casilla sitúa el texto en el centro.
   // Las puertas usan un cuadrado y la energía usa un círculo con su símbolo.
   /** @brief US-18–US-22 y US-30: dibuja un marcador temporal en una entidad del tablero. */
@@ -64,7 +62,6 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.fillStyle = texto === "+" ? "#6e4b0f" : "white";
     ctx.fillText(texto, x, y);
   }
-
   // Lee el tipo y la posición del guardián recibidos del servidor para elegir la figura y su casilla.
   /** @brief US-21 y US-30: dibuja un guardián usando el recurso del servidor. */
   function dibujarGuardian(guardian) {
@@ -72,9 +69,7 @@ export function crearRenderArena(canvas, urlJugador) {
     if (!sprite) { marca(guardian, "G", "#a74751"); return; }
     const x = guardian.x * lado, y = guardian.y * lado;
     ctx.drawImage(sprite, x + 1, y, lado - 3, lado - 3);
-
   }
-
   // El catálogo del mapa fija el centro del reactor. juego.reactor determina el color y la etiqueta,
   // y remaining_seconds da el tiempo de recarga. El tiempo de partida solo orienta los arcos
   // de luz en el dibujo. La disponibilidad para extraer energía la decide el servidor.
@@ -104,7 +99,6 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.fillStyle = "#f0f5f7";
     ctx.fillText(etiqueta, x, base);
   }
-
   // Recibe la lista de jugadores que envía la API e idPropio, el identificador de quien usa el móvil.
   // Primero pinta las figuras y guarda la posición de los nombres. Dibuja el texto al final
   // para que los personajes vecinos no lo tapen.
@@ -143,7 +137,6 @@ export function crearRenderArena(canvas, urlJugador) {
     // Dibuja el contorno y luego el texto de cada nombre en la posición reservada.
     etiquetas.forEach(e => { ctx.strokeText(e.texto, e.x, e.y); ctx.fillText(e.texto, e.x, e.y); });
   }
-
   // Redibuja el último estado recibido, tanto al cambiar el juego como al terminar de cargar una imagen.
   // Coloca el fondo y luego los objetos, guardianes, reactor y jugadores en ese orden.
   /** @brief US-07, US-20–US-23 y US-30: vuelve a dibujar todos los elementos de la arena. */
@@ -189,7 +182,6 @@ export function crearRenderArena(canvas, urlJugador) {
     ctx.font = "bold 16px system-ui, sans-serif";
     dibujarJugadores(juego.players || [], idPropio);
   }
-
   return {
     // Cada actualización entrega el plano, el estado del juego, las reglas de la sala y el ID local.
     // Sin juego o sin mapa oculta el lienzo. Con rotación cambia la paleta según los periodos

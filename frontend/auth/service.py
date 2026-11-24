@@ -66,13 +66,11 @@ def validar_registro(nombre: str, correo: str, password: str, confirmacion: str)
 
 class ServicioAuth:
     """Casos de uso de cuenta. Recibe sus dependencias, así se puede probar sin red."""
-
     ## @brief US-01–US-05 y US-29: configura las dependencias y el estado de sesión.
     def __init__(self, identidad: ProveedorIdentidad, servidor: ApiPerfiles):
         self._identidad = identidad
         self._servidor = servidor
         self._sesion: Sesion | None = None
-
     # -- sesión
     ## @brief US-01–US-05 y US-29: guarda los tokens entregados por Firebase.
     def _abrir_sesion(self, respuesta: dict) -> None:
@@ -80,7 +78,6 @@ class ServicioAuth:
             self._sesion = Sesion(respuesta["idToken"], respuesta["refreshToken"], respuesta["email"])
         except KeyError as error:
             raise AuthError("Firebase no devolvió una sesión completa.") from error
-
     ## @brief US-01–US-05 y US-29: obtiene el token vigente y lo renueva si se solicita.
     def _token(self, renovar: bool = False) -> str:
         if self._sesion is None:
@@ -89,13 +86,11 @@ class ServicioAuth:
             nuevo = self._identidad.renovar(self._sesion.refresh_token)
             self._sesion.id_token, self._sesion.refresh_token = nuevo["idToken"], nuevo["refreshToken"]
         return self._sesion.id_token
-
     ## @brief US-03 y US-05: resuelve un nombre de usuario a su correo.
     def _resolver_correo(self, identificador: str) -> str | None:
         """Acepta usuario o correo y devuelve el correo (None si el usuario no existe)."""
         identificador = identificador.strip()
         return identificador if "@" in identificador else self._servidor.correo_de(identificador)
-
     # -- casos de uso
     ## @brief US-01–US-02: registra la cuenta, crea el perfil y envía verificación.
     def registrar(self, nombre, password, confirmacion, correo) -> dict:
@@ -108,7 +103,6 @@ class ServicioAuth:
         self._identidad.enviar_verificacion(self._token())
         self._servidor.guardar_perfil(self._token(), nombre)
         return {"verification_required": True, "verification_sent": True}
-
     ## @brief US-03–US-04: autentica con correo o nombre y devuelve el perfil.
     def autenticar(self, identificador, password) -> dict | None:
         correo = self._resolver_correo(identificador)
@@ -125,7 +119,6 @@ class ServicioAuth:
         perfil = self._servidor.guardar_perfil(self._token(), nombre)
         self._sesion.nombre = perfil.get("name", nombre)
         return perfil
-
     ## @brief US-29: valida Google y prepara un perfil sin activar aún la sesión de juego.
     def preparar_acceso_google(self, credencial: str) -> tuple[Sesion, dict]:
         """Verifica el acceso y carga el perfil antes de activar la sesión del juego."""
@@ -144,7 +137,6 @@ class ServicioAuth:
         refresh = respuesta.get("refreshToken")
         if not all(isinstance(valor, str) and valor for valor in (uid, correo, token, refresh)):
             raise AuthError("Firebase no devolvió una sesión completa.")
-
         try:
             perfil = self._servidor.obtener_perfil(token)
         except PerfilNoEncontrado:
@@ -152,23 +144,19 @@ class ServicioAuth:
             # un error de conexión llega al menú para que se pueda reintentar sin crear un perfil por error.
             nombre = nombre_jugador_google(uid, correo, respuesta.get("displayName"))
             perfil = self._servidor.guardar_perfil(token, nombre)
-
         nombre_perfil = perfil.get("name")
         if not isinstance(nombre_perfil, str) or not nombre_perfil.strip():
             raise AuthError("El servidor no devolvió un nombre de jugador válido.")
         # El menú activa esta sesión al recoger el resultado del intento que sigue abierto en Pygame.
         return Sesion(token, refresh, correo, nombre_perfil), perfil
-
     # La pantalla llama aquí tras comprobar que sigue esperando ese intento. Desde ese momento, el perfil y la sala
     # pueden usar los tokens de la misma sesión que usarían con el acceso por correo.
     ## @brief US-29: activa en el cliente la sesión de Google que ya fue validada.
     def activar_acceso_google(self, sesion: Sesion) -> None:
         self._sesion = sesion
-
     ## @brief US-04: consulta el perfil de la cuenta autenticada.
     def obtener_perfil(self) -> dict:
         return self._servidor.obtener_perfil(self._token(renovar=True))
-
     ## @brief US-02: reenvía verificación solo a la cuenta que tiene sesión activa.
     def reenviar_verificacion(self, identificador) -> None:
         if self._sesion is None:
@@ -176,7 +164,6 @@ class ServicioAuth:
         if (self._resolver_correo(identificador) or "").casefold() != self._sesion.email.casefold():
             raise ValueError("El correo no coincide con la cuenta activa.")
         self._identidad.enviar_verificacion(self._token(renovar=True))
-
     ## @brief US-05: solicita a Firebase un enlace de recuperación de contraseña.
     def recuperar_contrasena(self, identificador) -> None:
         if not identificador.strip():
@@ -187,11 +174,9 @@ class ServicioAuth:
                 self._identidad.enviar_recuperacion(correo)
             except CredencialesInvalidas:
                 pass  # respuesta genérica: no revela si la cuenta existe
-
     ## @brief US-04: elimina la sesión activa de la aplicación.
     def cerrar_sesion(self) -> None:
         self._sesion = None
-
     ## @brief US-04: devuelve el nombre de la sesión activa, si existe.
     def usuario_actual(self) -> str | None:
         return self._sesion.nombre if self._sesion else None

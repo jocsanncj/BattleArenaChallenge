@@ -49,7 +49,6 @@ export function prepararSeleccion(cambio) {
   const aviso = document.querySelector("#aviso-avatar");
   const vista = document.querySelector("#retrato-seleccionado");
   let imagenPersonal, guardado, revision = 0, leyendo = false;
-
   // find devuelve la opción marcada. Para una figura del catálogo se muestra su retrato. Para una foto
   // personal se usa la copia preparada en memoria. Después se notifica el cambio a los botones de la sala.
   /** @brief US-06 y US-30: sincroniza la vista previa con la opción seleccionada. */
@@ -103,7 +102,6 @@ export function prepararSeleccion(cambio) {
       if (revision === intento) { leyendo = false; actualizarVista(); }
     }
   });
-
   return {
     // Al abrir la selección, pide GET /api/game/avatar con el token de Firebase y lee el campo avatar.
     // Antes de marcar la opción comprueba que sigue abierta la misma sesión y que el usuario no eligió

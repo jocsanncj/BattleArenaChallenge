@@ -17,15 +17,15 @@ class GestorGuardianes:
 
     Reglas de convivencia (servidor autoritativo):
     - Un guardián NUNCA ocupa la casilla de un jugador (en cualquier estado)
-      ni la de otro guardián. Congela desde una casilla adyacente.
+    ni la de otro guardián. Congela desde una casilla adyacente.
     - Los perseguidores se dirigen, por el camino más corto, al jugador
-      disponible más cercano (CA-21.11). Un jugador congelado o inmune no es
-      objetivo y los guardianes se alejan de él en lugar de campearlo.
+    disponible más cercano (CA-21.11). Un jugador congelado o inmune no es
+    objetivo y los guardianes se alejan de él en lugar de campearlo.
     - Los vigilantes patrullan su zona y solo congelan a quien se acerque
-      a ella; nunca salen a perseguir.
+    a ella; nunca salen a perseguir.
     - Tras congelar, el guardián se reubica lejos de los jugadores.
     - Un guardián que permanece cerca de un jugador inmune/congelado o que
-      queda inmóvil varias actualizaciones seguidas se reubica (anti-campeo).
+    queda inmóvil varias actualizaciones seguidas se reubica (anti-campeo).
     """
 
     # Actualizaciones seguidas junto a un jugador no disponible antes de reubicar.
@@ -40,8 +40,8 @@ class GestorGuardianes:
 
     ## @brief US-21: coloca perseguidores y vigilantes y prepara sus zonas de patrulla.
     def __init__(self, mapa, obstaculos, segundos_congelacion=3,
-                 reloj: Callable[[], float] = time.monotonic, semilla=None,
-                 segundos_inmunidad=3):
+                reloj: Callable[[], float] = time.monotonic, semilla=None,
+                segundos_inmunidad=3):
         self.mapa = mapa
         self.obstaculos = obstaculos
         self.reloj = reloj
@@ -53,24 +53,21 @@ class GestorGuardianes:
         self._esquinas = self._obtener_esquinas()
         self._memoria = {}
         self._conectados = []
-
         reservadas = set(mapa.puntos_inicio())
         reservadas.update((t.x, t.y) for t in obstaculos.trampas)
         reservadas.update((p["x"], p["y"]) for p in obstaculos.puertas)
         posiciones = self._buscar_posiciones_extremos(4, reservadas)
         if len(posiciones) < 4:
             raise ValueError("No hay espacio suficiente para colocar los cuatro guardianes.")
-
         for indice, (x, y) in enumerate(posiciones, 1):
             tipo = "perseguidor" if indice <= 2 else "vigilante"
             guardian = {"id": f"guardian_{indice}", "x": x, "y": y,
-                       "tipo": tipo, "objetivo": None}
+                    "tipo": tipo, "objetivo": None}
             if tipo == "vigilante":
                 centro = self._elegir_centro_vigilancia(guardian)
                 guardian["zona"] = {"x": centro[0], "y": centro[1],
                                     "radio": self.RADIO_VIGILANCIA}
             self.guardianes.append(guardian)
-
     ## @brief Calcula las casillas de esquina reservadas para jugadores.
     def _obtener_esquinas(self):
         mx = min(2, max(1, self.mapa.columnas // 5))
@@ -78,35 +75,29 @@ class GestorGuardianes:
         return ((mx, my), (self.mapa.columnas - 1 - mx, my),
                 (mx, self.mapa.filas - 1 - my),
                 (self.mapa.columnas - 1 - mx, self.mapa.filas - 1 - my))
-
     ## @brief Reúne casillas ocupadas por inicios, trampas y puertas.
     def _reservadas(self):
         reservadas = set(self.mapa.puntos_inicio())
         reservadas.update((t.x, t.y) for t in self.obstaculos.trampas)
         reservadas.update((p["x"], p["y"]) for p in self.obstaculos.puertas)
         return reservadas
-
     ## @brief Lista las casillas transitables que no están reservadas.
     def _casillas_validas(self, reservadas=()):
         reservadas = set(reservadas)
         return [(x, y) for y in range(1, self.mapa.filas - 1)
                 for x in range(1, self.mapa.columnas - 1)
                 if self.mapa.es_transitable(x, y) and (x, y) not in reservadas]
-
     ## @brief Calcula los puntos medios de los cuatro bordes de la arena.
     def _puntos_extremos(self):
         """Puntos medios de los cuatro bordes de la zona jugable (arriba, abajo, izquierda, derecha).
-
         Las esquinas quedan libres porque son los puntos de inicio de los jugadores.
         """
         cx, cy = (self.mapa.columnas - 1) / 2, (self.mapa.filas - 1) / 2
         return ((cx, 1), (cx, self.mapa.filas - 2),
                 (1, cy), (self.mapa.columnas - 2, cy))
-
     ## @brief US-21: asigna guardianes a las casillas válidas más cercanas a los extremos.
     def _buscar_posiciones_extremos(self, cantidad, reservadas):
         """Coloca los guardianes en los extremos del escenario, lejos del reactor del centro.
-
         Para cada extremo elige la casilla válida libre más cercana; si está ocupada o
         reservada (trampa, puerta, inicio), usa la siguiente más próxima.
         """
@@ -119,7 +110,6 @@ class GestorGuardianes:
             elegidas.append(min(disponibles, key=lambda p: (
                 (p[0] - objetivo[0]) ** 2 + (p[1] - objetivo[1]) ** 2, p[1], p[0])))
         return elegidas
-
     ## @brief US-21: selecciona una zona de vigilancia separada de las demás.
     def _elegir_centro_vigilancia(self, guardian):
         otros = [g.get("zona") for g in self.guardianes if g.get("zona")]
@@ -132,12 +122,10 @@ class GestorGuardianes:
             abs(p[0] - z["x"]) + abs(p[1] - z["y"]) >= self.RADIO_VIGILANCIA * 2
             for z in otros)]
         return self.aleatorio.choice(separadas or opciones)
-
     ## @brief Devuelve las casillas transitables adyacentes a una posición.
     def _casillas_vecinas(self, x, y):
         candidatas = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
         return [p for p in candidatas if self.mapa.es_transitable(*p)]
-
     # ------------------------------------------------------------------
     # Utilidades de consulta
     # ------------------------------------------------------------------
@@ -145,12 +133,10 @@ class GestorGuardianes:
     def posiciones(self):
         """Casillas ocupadas por guardianes (el servidor las usa para bloquear a jugadores)."""
         return {(g["x"], g["y"]) for g in self.guardianes}
-
     ## @brief Obtiene contadores de seguimiento persistentes para el guardián.
     def _memoria_de(self, guardian):
         return self._memoria.setdefault(
             guardian["id"], {"cerca": 0, "quieto": 0, "ultima": (guardian["x"], guardian["y"])})
-
     ## @brief US-21: excluye como objetivo a jugadores congelados o inmunes.
     def _jugador_disponible(self, jugador, ahora):
         """Solo considera jugadores libres y cuya inmunidad ya terminó."""
@@ -162,19 +148,16 @@ class GestorGuardianes:
             estado.get("estado", "normal") != "congelado"
             and estado.get("segundos_inmunidad", 0.0) <= 0.0
         )
-
     ## @brief Separa los jugadores conectados en objetivos disponibles y protegidos.
     def _clasificar(self, ahora):
         disponibles, no_disponibles = [], []
         for j in self._conectados:
             (disponibles if self._jugador_disponible(j, ahora) else no_disponibles).append(j)
         return disponibles, no_disponibles
-
     ## @brief Convierte la posición de un jugador a coordenadas enteras de casilla.
     @staticmethod
     def _pos(jugador):
         return (int(jugador["x"]), int(jugador["y"]))
-
     ## @brief US-21: delimita la zona que los guardianes deben evitar para no acampar.
     def _zona_evitada(self, no_disponibles):
         """Casillas de un jugador congelado/inmune y las contiguas: no se campean."""
@@ -183,11 +166,9 @@ class GestorGuardianes:
             x, y = self._pos(j)
             evitar.update({(x, y), (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)})
         return evitar
-
     ## @brief Devuelve las posiciones ocupadas por los otros guardianes.
     def _otros_guardianes(self, guardian):
         return {(g["x"], g["y"]) for g in self.guardianes if g is not guardian}
-
     # ------------------------------------------------------------------
     # Rutas y reubicación
     # ------------------------------------------------------------------
@@ -210,7 +191,6 @@ class GestorGuardianes:
                 padre[vecino] = actual
                 cola.append(vecino)
         return distancia, padre
-
     ## @brief Reconstruye el primer paso de una ruta desde su mapa de predecesores.
     @staticmethod
     def _primer_paso(padre, origen, destino):
@@ -218,7 +198,6 @@ class GestorGuardianes:
         while padre[actual] != origen:
             actual = padre[actual]
         return actual
-
     ## @brief US-21: mueve un guardián a una casilla libre alejada de jugadores.
     def _reubicar(self, guardian):
         """Teletransporta al guardián a una casilla libre y alejada de los jugadores."""
@@ -226,7 +205,7 @@ class GestorGuardianes:
         posiciones_jugadores = [self._pos(j) for j in self._conectados]
         reservadas = self._reservadas()
         validas = [p for p in self._casillas_validas(reservadas | ocupadas)
-                   if p not in posiciones_jugadores]
+                if p not in posiciones_jugadores]
         if validas:
             def lejania(p):
                 return min((_manhattan(p, q) for q in posiciones_jugadores), default=99)
@@ -238,8 +217,8 @@ class GestorGuardianes:
                 zona = guardian.get("zona")
                 if zona:
                     preferidas = [p for p in lejos
-                                  if abs(p[0] - zona["x"]) <= zona["radio"]
-                                  and abs(p[1] - zona["y"]) <= zona["radio"]]
+                                if abs(p[0] - zona["x"]) <= zona["radio"]
+                                and abs(p[1] - zona["y"]) <= zona["radio"]]
                 if not preferidas:
                     preferidas = [p for p in lejos if p in self._esquinas]
                 guardian["x"], guardian["y"] = self.aleatorio.choice(preferidas or lejos)
@@ -247,7 +226,6 @@ class GestorGuardianes:
         guardian["objetivo"] = None
         memoria = self._memoria_de(guardian)
         memoria.update(cerca=0, quieto=0, ultima=(guardian["x"], guardian["y"]))
-
     ## @brief US-21: congela al jugador adyacente y retira al guardián.
     def _congelar_y_reubicar(self, guardian, jugador, ahora):
         if not self._jugador_disponible(jugador, ahora):
@@ -259,7 +237,6 @@ class GestorGuardianes:
             segundos_inmunidad=self.segundos_inmunidad,
         )
         self._reubicar(guardian)
-
     # ------------------------------------------------------------------
     # Movimiento
     # ------------------------------------------------------------------
@@ -268,10 +245,9 @@ class GestorGuardianes:
         """Vecinos transitables sin guardianes ni jugadores encima."""
         bloqueadas = self._otros_guardianes(guardian) | {self._pos(j) for j in self._conectados}
         libres = [p for p in self._casillas_vecinas(guardian["x"], guardian["y"])
-                  if p not in bloqueadas]
+                if p not in bloqueadas]
         preferidas = [p for p in libres if p not in evitar]
         return preferidas or libres
-
     ## @brief US-21: aleja al guardián cuando no hay un objetivo válido.
     def _alejarse(self, guardian, evitar):
         """Sin objetivo: se aleja de los jugadores en vez de quedarse junto a ellos."""
@@ -290,7 +266,6 @@ class GestorGuardianes:
         mejor = max(lejania(p) for p in opciones)
         guardian["x"], guardian["y"] = self.aleatorio.choice(
             [p for p in opciones if lejania(p) == mejor])
-
     ## @brief US-21: mueve al perseguidor hacia el objetivo disponible más cercano.
     def _mover_perseguidor(self, guardian, disponibles, evitar, ahora, asignados):
         origen = (guardian["x"], guardian["y"])
@@ -299,7 +274,7 @@ class GestorGuardianes:
         distancia, padre = self._mapa_distancias(origen, bloqueadas, posiciones_jugadores)
         alcanzables = sorted(
             ((distancia[self._pos(j)], str(j["player_id"]), j)
-             for j in disponibles if self._pos(j) in distancia),
+            for j in disponibles if self._pos(j) in distancia),
             key=lambda t: (t[0], t[1]),
         )
         if not alcanzables:
@@ -321,7 +296,6 @@ class GestorGuardianes:
                 guardian["x"], guardian["y"] = self.aleatorio.choice(opciones)
                 return
         guardian["x"], guardian["y"] = self._primer_paso(padre, origen, destino)
-
     ## @brief US-21: patrulla su zona y congela solo a jugadores cercanos dentro de ella.
     def _mover_vigilante(self, guardian, disponibles, evitar, ahora):
         zona = guardian["zona"]
@@ -336,8 +310,8 @@ class GestorGuardianes:
                 return
         vecinos = self._pasos_libres(guardian, evitar)
         dentro = [p for p in vecinos
-                  if abs(p[0] - zona["x"]) <= zona["radio"]
-                  and abs(p[1] - zona["y"]) <= zona["radio"]]
+                if abs(p[0] - zona["x"]) <= zona["radio"]
+                and abs(p[1] - zona["y"]) <= zona["radio"]]
         if dentro and self.aleatorio.random() < 0.85:
             siguiente = self.aleatorio.choice(dentro)
         else:
@@ -347,7 +321,6 @@ class GestorGuardianes:
             siguiente = min(opciones, key=lambda p: (
                 abs(p[0] - zona["x"]) + abs(p[1] - zona["y"]) + self.aleatorio.random() * 2))
         guardian["x"], guardian["y"] = siguiente
-
     ## @brief US-21: reubica guardianes que acampan o permanecen inmóviles.
     def _vigilar_permanencia(self, guardian, no_disponibles):
         """Anti-campeo: reubica a un guardián que no se despega de un jugador
@@ -361,7 +334,6 @@ class GestorGuardianes:
         if (memoria["cerca"] >= self.MAX_ACTUALIZACIONES_CERCA
                 or memoria["quieto"] >= self.MAX_ACTUALIZACIONES_QUIETO):
             self._reubicar(guardian)
-
     ## @brief US-21: actualiza movimiento, objetivos, impactos y prevención de campeo.
     def actualizar(self, jugadores, ahora=None):
         ahora = self.reloj() if ahora is None else ahora
@@ -369,29 +341,24 @@ class GestorGuardianes:
             return self.estado_publico(jugadores, ahora)
         self._ultimo_movimiento = ahora
         self._conectados = [j for j in jugadores if j.get("connected", True)]
-
         asignados = set()
         for guardian in self.guardianes:
             # Se recalcula por guardián: otro guardián pudo congelar a alguien este turno.
             disponibles, no_disponibles = self._clasificar(ahora)
             evitar = self._zona_evitada(no_disponibles)
-
             # Estado heredado inválido: sobre un jugador. Congela (si procede) y se retira.
             encima = next((j for j in self._conectados
-                           if self._pos(j) == (guardian["x"], guardian["y"])), None)
+                        if self._pos(j) == (guardian["x"], guardian["y"])), None)
             if encima is not None:
                 self._congelar_y_reubicar(guardian, encima, ahora)
                 continue
-
             if guardian["tipo"] == "perseguidor":
                 self._mover_perseguidor(guardian, disponibles, evitar, ahora, asignados)
             else:
                 self._mover_vigilante(guardian, disponibles, evitar, ahora)
             _, no_disponibles = self._clasificar(ahora)
             self._vigilar_permanencia(guardian, no_disponibles)
-
         return self.estado_publico(jugadores, ahora)
-
     ## @brief US-21 y US-30: devuelve las posiciones públicas sin revelar objetivos ausentes.
     def estado_publico(self, jugadores=(), ahora=None):
         resultado = []
@@ -401,7 +368,6 @@ class GestorGuardianes:
                 copia["objetivo"] = None
             resultado.append(copia)
         return resultado
-
     ## @brief US-22: agrega guardianes temporales para un evento especial.
     def agregar_adicionales(self, cantidad=5, posiciones_ocupadas=()):
         """Agrega guardianes temporales en casillas libres de la arena."""
@@ -420,7 +386,7 @@ class GestorGuardianes:
         nuevos = []
         siguiente = 1 + max(
             (int(g["id"].rsplit("_", 1)[-1]) for g in self.guardianes
-             if g["id"].startswith("guardian_") and g["id"].rsplit("_", 1)[-1].isdigit()),
+            if g["id"].startswith("guardian_") and g["id"].rsplit("_", 1)[-1].isdigit()),
             default=0,
         )
         for indice, (x, y) in enumerate(posiciones, 1):
@@ -432,7 +398,6 @@ class GestorGuardianes:
             self.guardianes.append(guardian)
             nuevos.append(guardian["id"])
         return nuevos
-
     ## @brief US-22: elimina solo los guardianes adicionales del evento indicado.
     def quitar_adicionales(self, identificadores):
         """Retira únicamente los guardianes temporales creados por un evento."""
@@ -441,4 +406,3 @@ class GestorGuardianes:
             g for g in self.guardianes
             if not (g.get("adicional") and g["id"] in conjunto)
         ]
-

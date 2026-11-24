@@ -14,7 +14,6 @@ export function prepararMusica(boton) {
   let pendiente = "";
   let intento = 0;
   let paginaActiva = true;
-
   // Usa la escena, la preferencia y el último intento para elegir el texto del botón. aria-pressed
   // informa a los lectores de pantalla de si está activada la música sin ningún reintento pendiente.
   /** @brief US-24 y US-30: actualiza el botón según escena, preferencia y reproducción. */
@@ -24,7 +23,6 @@ export function prepararMusica(boton) {
       : activa && !pendiente ? "Silenciar música" : "Activar música";
     boton.setAttribute("aria-pressed", String(activa && !pendiente));
   }
-
   // Pausa el reproductor y avanza el número de intento. Un play() anterior puede fallar más tarde
   // y su número ya no coincidirá, por lo que el error no cambiará el control de la escena actual.
   /** @brief US-24 y US-30: pausa la pista e invalida intentos de reproducción anteriores. */
@@ -32,7 +30,6 @@ export function prepararMusica(boton) {
     intento++;
     audio.pause();
   }
-
   // Pide al navegador que reproduzca la pista si la página está visible, hay escena y el usuario quiere sonido.
   // await espera la respuesta de play(). NotAllowedError deja pendiente un toque del jugador.
   // Los demás errores dejan disponible el botón de reintento.
@@ -51,7 +48,6 @@ export function prepararMusica(boton) {
       mostrarControl();
     }
   }
-
   // Un toque silencia la pista activa o vuelve a intentar la que falló. localStorage conserva
   // la elección para otra visita. Si no está disponible, activa la mantiene durante esta visita.
   boton.addEventListener("click", () => {
@@ -62,13 +58,11 @@ export function prepararMusica(boton) {
     else pausar();
     mostrarControl();
   });
-
   // Si el navegador pide un gesto, un toque en otro control del juego también sirve para reintentar.
   // El evento llega al contenedor #partida después de llegar al control pulsado.
   boton.closest("#partida").addEventListener("click", evento => {
     if (!boton.contains(evento.target) && pendiente === "gesto") reproducir();
   });
-
   // visibilitychange se dispara al ocultar o volver a mostrar la pestaña. Pausa al ocultarse
   // y al volver comprueba otra vez la escena y la preferencia de sonido.
   document.addEventListener("visibilitychange", () => {
@@ -79,7 +73,6 @@ export function prepararMusica(boton) {
   window.addEventListener("pagehide", () => { paginaActiva = false; pausar(); });
   // pageshow vuelve a habilitar los intentos, incluso cuando el navegador restaura la página desde el historial.
   window.addEventListener("pageshow", () => { paginaActiva = true; reproducir(); });
-
   mostrarControl();
   return {
     // El sondeo de la partida pasa «arena», «resultados» o null. Si la escena se repite deja seguir

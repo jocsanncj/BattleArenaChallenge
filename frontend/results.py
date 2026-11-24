@@ -53,7 +53,6 @@ def draw_avatar(surface, avatar_id: str, center: tuple, size: int = 18,
     """
     _require_pygame()
     from shared.domain.avatares import AVATARES_PREDETERMINADOS, ServicioAvatar
-
     x, y = (int(value) for value in center)
     radius = max(8, int(size))
     if avatar_png:
@@ -134,7 +133,6 @@ class _CelebrationMusic:
         self.channel = None
         from frontend.audio import preferencia
         self.muted = not preferencia()
-
     ## @brief Inicia la música de celebración y devuelve cualquier aviso de audio.
     def start(self) -> str:
         try:
@@ -151,13 +149,11 @@ class _CelebrationMusic:
             return ""
         except Exception:
             return "Audio no disponible en este equipo. La celebración continúa."
-
     ## @brief Alterna el silencio de la música de celebración.
     def toggle(self):
         self.muted = not self.muted
         if self.sound:
             self.sound.set_volume(0 if self.muted else 0.40)
-
     ## @brief Detiene el canal de audio al cerrar la ceremonia.
     def stop(self):
         if self.channel:
@@ -208,9 +204,9 @@ def _validated_result(result: dict) -> dict:
         if not isinstance(avatar_id, str):
             raise ValueError("El identificador del avatar no es válido.")
         normalized.append(dict(player, score=score,
-                               username=str(player.get("username") or "Jugador"),
-                               new_record=new_record,
-                               personal_record=personal_record))
+                            username=str(player.get("username") or "Jugador"),
+                            new_record=new_record,
+                            personal_record=personal_record))
     if set(scores) != player_ids:
         raise ValueError("Los puntajes no coinciden con la lista de participantes.")
     winner_id = result.get("winner_id")
@@ -233,19 +229,18 @@ class VictoryView:
     """
     Dibuja el resultado final en la ventana o en una Surface de prueba.
     """
-
     ## @brief Prepara fuentes y partículas reproducibles para la ceremonia.
     def __init__(self):
         _require_pygame()
         self.fonts = {}
         rng = random.Random(17)
         self.confetti = [(rng.randrange(860), rng.randrange(700), rng.randrange(35, 110),
-                          rng.choice([TEAL, ORANGE, PURPLE, GOLD]), rng.randrange(3, 7))
-                         for _ in range(86)]
+                        rng.choice([TEAL, ORANGE, PURPLE, GOLD]), rng.randrange(3, 7))
+                        for _ in range(86)]
 
     ## @brief Renderiza texto ajustado y alineado en la superficie de victoria.
     def _text(self, surface, text, position, size=20, color=TEXT, bold=False,
-              center=False, max_width=None):
+            center=False, max_width=None):
         key = (size, bold)
         if key not in self.fonts:
             self.fonts[key] = pygame.font.SysFont("Segoe UI,DejaVu Sans,Arial", size, bold=bold)
@@ -265,7 +260,7 @@ class VictoryView:
 
     ## @brief US-17 y US-26: dibuja ganador, podio, récords y celebración.
     def render(self, surface, result: dict, elapsed: float = 0,
-               audio_notice: str = "", muted: bool = False):
+            audio_notice: str = "", muted: bool = False):
         surface.fill((18, 15, 37))
         pygame.draw.circle(surface, (37, 29, 65), (430, 295), 234)
         pygame.draw.circle(surface, (48, 37, 77), (430, 295), 188, width=1)
@@ -282,7 +277,7 @@ class VictoryView:
         winner = next(p for p in players if p["player_id"] == result["winner_id"])
         pygame.draw.circle(surface, (71, 56, 79), (430, 205), 73)
         pygame.draw.polygon(surface, GOLD, [(405, 151), (405, 133), (418, 143),
-                                          (430, 126), (442, 143), (455, 133), (455, 151)])
+                                        (430, 126), (442, 143), (455, 133), (455, 151)])
         draw_avatar(
             surface,
             winner.get("avatar_id", ""),
@@ -373,12 +368,12 @@ class VictoryView:
                 max_width=card_width - 32,
             )
         self._text(surface, "Gracias por jugar. ¡Nos vemos en la próxima partida!", (430, 612),
-                   14, TEAL, center=True)
+                14, TEAL, center=True)
         if audio_notice:
             self._text(surface, audio_notice, (430, 640), 12, ORANGE, center=True, max_width=800)
         else:
             self._text(surface, "M  ·  " + ("ACTIVAR MÚSICA" if muted else "SILENCIAR MÚSICA"),
-                       (430, 640), 12, MUTED, center=True)
+                    (430, 640), 12, MUTED, center=True)
         self._text(surface, "ESC  ·  CERRAR VENTANA", (430, 675), 14, TEXT, center=True)
 
 

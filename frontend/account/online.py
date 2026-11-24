@@ -17,7 +17,6 @@ from .menu import MainMenuScene
 
 class JuegoOnlineScene(BaseScene):
     """Adaptador de escenas para avatar, sala, configuración y arena online."""
-
     ## @brief US-06–US-11: crea servicios online y abre el flujo de avatar, sala y arena.
     def __init__(self, font, nombre_usuario):
         super().__init__()
@@ -28,12 +27,11 @@ class JuegoOnlineScene(BaseScene):
                             ServicioPartida(RepositorioPartidaServidor()),
                             self.id_usuario, self.nombre_usuario)
         self._tipos = {"avatar": PantallaAvatar, "sala": PantallaSala,
-                       "configuracion": PantallaConfiguracion, "arena": PantallaArena}
+                    "configuracion": PantallaConfiguracion, "arena": PantallaArena}
         self.page = "avatar"
         self.screen = PantallaAvatar(self.ctx)
         self.status = ""
         self._victory_match_id = None
-
     ## @brief US-08–US-11: cambia de pantalla y conserva los errores como avisos.
     def _cambiar(self, page):
         try:
@@ -52,7 +50,6 @@ class JuegoOnlineScene(BaseScene):
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.status = str(error)
             self.page, self.screen = "sala", PantallaSala(self.ctx)
-
     ## @brief US-08–US-11: enruta teclado y clics a la pantalla online activa.
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -121,7 +118,6 @@ class JuegoOnlineScene(BaseScene):
                         self._victory_match_id = match_id
         except (ErrorApp, OSError, RuntimeError, ValueError) as error:
             self.screen.mensaje = str(error)
-
     ## @brief Dibuja la pantalla activa e informa errores de conexión.
     def draw(self, surface):
         # CAMBIO ONLINE: conserva el tamaño de la ventana y el dibujo de cada pantalla.
@@ -139,7 +135,6 @@ class JuegoOnlineScene(BaseScene):
         if self.status:
             texto = self.font.render(self.status, True, ERROR)
             surface.blit(texto, (20, surface.get_height() - 30))
-
     ## @brief US-09–US-10: libera la plaza del jugador al cerrar la ventana.
     def on_close(self):
         """Libera la plaza y pausa la partida cuando se cierra la ventana."""

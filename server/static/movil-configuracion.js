@@ -13,7 +13,6 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
   const aviso = document.getElementById("aviso-configuracion");
   let reglas;
   let peticion;
-
   // Al abrir el formulario o cambiar el modo de fin se muestra solo el límite elegido. El otro campo
   // queda deshabilitado. Al guardar se conserva su valor anterior por si la sala vuelve a ese modo.
   /** @brief US-08 y US-30: muestra y habilita el límite de la partida seleccionado. */
@@ -24,7 +23,6 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
     campos.minutos_fin.disabled = !porTiempo;
     campos.puntos_fin.disabled = porTiempo;
   }
-
   // Cierra el formulario y cambia aria-expanded para que los lectores de pantalla anuncien el panel cerrado.
   // Cerrar solo modifica la interfaz del móvil.
   /** @brief US-08 y US-30: cierra el editor de configuración y actualiza su estado accesible. */
@@ -32,7 +30,6 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
     form.hidden = true;
     editar.setAttribute("aria-expanded", "false");
   }
-
   // Al abrir el editor copia la última configuración confirmada en los campos. La opción «aleatorio»
   // representa la rotación de escenarios y el foco pasa al modo de fin para poder editar con el teclado.
   editar.addEventListener("click", () => {
@@ -53,7 +50,6 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
   campos.modo_fin.addEventListener("change", mostrarLimite);
   // Cancelar descarta la edición visible y devuelve el foco a Editar. Al reabrir se leerán otra vez las reglas de la sala.
   cancelar.addEventListener("click", () => { cerrar(); editar.focus(); });
-
   // Al pulsar Guardar, el formulario intercepta submit para que la página siga abierta. Reúne los
   // valores de los campos y los envía por PUT a /api/game/config con el token de quien edita. El servidor comprueba
   // el permiso de creador. Tras una respuesta válida se cierra el editor y se vuelve a consultar la sala.
@@ -98,7 +94,6 @@ export function prepararConfiguracion({ pedir, jugadorActual, actualizar }) {
       }
     }
   });
-
   return {
     // Cada respuesta de la sala trae sus jugadores y su estado. Mientras espera, el primer jugador es el creador.
     // Solo si coincide con idActual se muestra la edición. Si pierde el permiso, se cancela la espera de la

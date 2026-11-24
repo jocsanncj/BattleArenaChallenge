@@ -17,23 +17,18 @@ from shared.data import (
 
 class RepositorioAvataresServidor(RepositorioAvatares):
     """Guarda y recupera elecciones de avatar mediante la API autenticada."""
-
     ## @brief Prepara la caché local de elecciones consultadas al servidor.
     def __init__(self) -> None:
         self._cache: dict[int, Optional[EleccionAvatar]] = {}
-
     @staticmethod
     ## @brief Obtiene el cliente HTTP autenticado del usuario actual.
     def _cliente_token():
         from .auth.service import cliente_juego, token_para_juego
-
         return cliente_juego(), token_para_juego()
-
     ## @brief US-06: carga y almacena en caché la selección de avatar.
     def obtener(self, id_usuario: int) -> Optional[EleccionAvatar]:
         if id_usuario in self._cache:
             return self._cache[id_usuario]
-
         cliente, token = self._cliente_token()
         respuesta = cliente.obtener_avatar(token, id_usuario)
         eleccion = (
@@ -45,7 +40,6 @@ class RepositorioAvataresServidor(RepositorioAvatares):
         )
         self._cache[id_usuario] = eleccion
         return eleccion
-
     ## @brief US-06: envía la selección de avatar y actualiza la caché.
     def guardar(self, id_usuario: int, eleccion: EleccionAvatar) -> None:
         cliente, token = self._cliente_token()

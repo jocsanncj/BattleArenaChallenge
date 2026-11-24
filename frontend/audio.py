@@ -20,7 +20,6 @@ class Musica:
         self.activa = preferencia()
         self.sonando = False
         self.aviso = ""
-
     ## @brief Inicia la pista en bucle si el audio está habilitado.
     def iniciar(self):
         if not self.activa or self.sonando:
@@ -37,13 +36,11 @@ class Musica:
             self.aviso = ""
         except (pygame.error, OSError) as exc:
             self.aviso = f"Audio no disponible. {exc}"
-
     ## @brief Detiene la pista activa sin modificar la preferencia.
     def detener(self):
         if self.sonando:
             pygame.mixer.music.stop()
             self.sonando = False
-
     ## @brief Alterna la reproducción y persiste la preferencia de música.
     def alternar(self):
         self.activa = not self.activa

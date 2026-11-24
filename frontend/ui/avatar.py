@@ -16,9 +16,7 @@ class PantallaAvatar(Pantalla):
     Atributos:
         MINIATURA (int): lado en píxeles de cada avatar del catálogo en pantalla (80).
     """
-
     MINIATURA = 80
-
     ## @brief US-06: prepara el catálogo y muestra avisos al abrir la selección de avatar.
     def __init__(self, ctx: Contexto, aviso: str = ""):
         """
@@ -34,7 +32,6 @@ class PantallaAvatar(Pantalla):
         super().__init__(ctx)
         if aviso:
             self.mensaje, self.color_mensaje = aviso, ERROR
-
     ## @brief US-06: calcula la posición visual de una miniatura del catálogo.
     def _rect_miniatura(self, i: int) -> pygame.Rect:
         """
@@ -47,7 +44,6 @@ class PantallaAvatar(Pantalla):
             pygame.Rect: zona que ocupa la miniatura.
         """
         return pygame.Rect(60 + i * (self.MINIATURA + 25), 130, self.MINIATURA, self.MINIATURA)
-
     ## @brief US-06: crea acciones para elegir, cargar o confirmar el avatar.
     def botones(self) -> List[Boton]:
         """
@@ -61,10 +57,9 @@ class PantallaAvatar(Pantalla):
             List[Boton]: botones de la pantalla.
         """
         miniaturas = [Boton(self._rect_miniatura(i), "", lambda a=a: self._elegir(a))
-                      for i, a in enumerate(self.ctx.avatares.listar_predeterminados())]
+                    for i, a in enumerate(self.ctx.avatares.listar_predeterminados())]
         return miniaturas + [Boton(pygame.Rect(60, 290, 260, 40), "Cargar imagen...", self._subir),
-                             Boton(pygame.Rect(60, 350, 260, 40), "Continuar", lambda: "siguiente", EXITO)]
-
+                            Boton(pygame.Rect(60, 350, 260, 40), "Continuar", lambda: "siguiente", EXITO)]
     ## @brief US-06: guarda el avatar predeterminado elegido por el jugador.
     def _elegir(self, avatar) -> None:
         """
@@ -78,7 +73,6 @@ class PantallaAvatar(Pantalla):
         """
         self.ctx.avatares.seleccionar_predeterminado(self.ctx.id_usuario, avatar.id)
         self.exito(f"Avatar «{personajes.NOMBRES[avatar.id]}» seleccionado.")
-
     ## @brief US-06: carga una imagen local como avatar personalizado.
     def _subir(self) -> None:
         """
@@ -96,7 +90,6 @@ class PantallaAvatar(Pantalla):
         if ruta:
             self.ctx.avatares.subir_personalizado(self.ctx.id_usuario, ruta)
             self.exito("Imagen cargada como avatar.")
-
     ## @brief US-06: dibuja el catálogo y resalta la elección actual.
     def dibujar(self, superficie) -> None:
         """
@@ -120,7 +113,7 @@ class PantallaAvatar(Pantalla):
             etiqueta = self.fuente_chica.render(personajes.NOMBRES[av.id], True, (236, 244, 245))
             superficie.blit(etiqueta, etiqueta.get_rect(midtop=(r.centerx, r.bottom+9)))
         pygame.draw.rect(superficie, ACENTO if actual.tipo == "personalizado" else PANEL, (560, 280, 148, 148),
-                         border_radius=8)
+                        border_radius=8)
         superficie.blit(personajes.de_usuario(self.ctx.avatares, self.ctx.id_usuario, 128), (570, 290))
         self.texto(superficie, "Avatar actual", (570, 435))
         self.dibujar_botones(superficie)

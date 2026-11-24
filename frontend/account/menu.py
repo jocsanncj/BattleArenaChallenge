@@ -56,7 +56,6 @@ class MainMenuScene(BaseScene):
         # Crea los botones y campos iniciales para la pantalla de bienvenida.
         self._configure_page()
         self.ranking = []
-
     ## @brief Crea y registra un botón en la colección de la página activa.
     ## @param x Coordenada horizontal del control.
     ## @param y Coordenada vertical del control.
@@ -67,7 +66,6 @@ class MainMenuScene(BaseScene):
     def _button(self, x, y, width, text, callback):
         # Usa la altura común de botones y la fuente principal de la interfaz.
         self.buttons.append(Boton(x, y, width, 46, text, self.font, callback))
-
     ## @brief Cambia la página y reconstruye sus controles.
     ## @param page Identificador interno de pantalla.
     ## @return None.
@@ -81,7 +79,6 @@ class MainMenuScene(BaseScene):
         self.status = ""
         # Configura los controles correspondientes a la nueva pantalla.
         self._configure_page()
-
     ## @brief US-01–US-04 y US-29: configura formularios, navegación y acciones de cuenta.
     ## @return None.
     def _configure_page(self):
@@ -138,16 +135,13 @@ class MainMenuScene(BaseScene):
         elif self.page == "ranking":
             self._button(250, 535, 190, "Actualizar", self._abrir_ranking)
             self._button(460, 535, 190, "Volver", lambda: self._set_page("menu"))
-
         if self.page in {"welcome", "menu"}:
             self._button(798, 22, 174, "Música · " + ("activa" if musica.activa else "apagada"), self._musica)
-
     ## @brief Alterna la música de la interfaz y actualiza su control visual.
     def _musica(self):
         musica.alternar()
         self.status = musica.aviso
         self._configure_page()
-
     ## @brief Guarda el nombre y navega al menú luego de autenticar.
     ## @param nombre Nombre de la cuenta que inició sesión.
     ## @return None.
@@ -155,7 +149,6 @@ class MainMenuScene(BaseScene):
         # El nombre se utiliza para saludar al usuario en la pantalla principal.
         self.user_name = nombre
         self._set_page("menu")
-
     ## @brief US-01 y US-02: registra la cuenta e informa el estado de verificación.
     ## @return None.
     def _registrar(self):
@@ -169,7 +162,6 @@ class MainMenuScene(BaseScene):
         except (OSError, RuntimeError, ValueError) as error:
             self.status = str(error)
             return
-
         # Conserva el correo para permitir reenviar la verificación de Firebase.
         self.user_name = correo.strip()
         # Diferencia entre el alta correcta y el envío fallido del correo.
@@ -193,7 +185,6 @@ class MainMenuScene(BaseScene):
             )
             self._set_page("email_error")
             self.status = message
-
     ## @brief Al pulsar «Continua con Google», guarda el intento que consultará update() mientras el jugador elige su cuenta.
     ## @details Si el navegador no se puede abrir, deja la pantalla de acceso disponible para volver a intentarlo.
     def _iniciar_sesion_google(self):
@@ -202,7 +193,6 @@ class MainMenuScene(BaseScene):
             self.status = "Continua en tu navegador para iniciar sesion."
         else:
             self.status = "No se pudo abrir el navegador."
-
     ## @brief US-29: recoge la sesión de Google y abre el menú autenticado.
     ## @details Si el resultado contiene un error, lo muestra en el login. Si contiene el perfil, activa la sesión y abre el menú.
     def _finalizar_sesion_google(self, intento):
@@ -222,7 +212,6 @@ class MainMenuScene(BaseScene):
         self.failed_attempts = 0
         self.current_user = perfil
         self._mostrar_menu(str(perfil["name"]))
-
     ## @brief US-03: autentica con credenciales y gestiona errores y correo pendiente.
     ## @return None.
     def _iniciar_sesion(self):
@@ -244,7 +233,6 @@ class MainMenuScene(BaseScene):
         except (OSError, RuntimeError, ValueError) as error:
             self.status = str(error)
             return
-
         # None indica credenciales incorrectas; se cuentan hasta ofrecer recuperación.
         if profile is None:
             self.failed_attempts += 1
@@ -260,11 +248,9 @@ class MainMenuScene(BaseScene):
                     f"Intento {self.failed_attempts}/3."
                 )
             return
-
         self.failed_attempts = 0
         self.current_user = profile
         self._mostrar_menu(str(profile["name"]))
-
     ## @brief Abre la pantalla de solicitud de recuperación con el identificador escrito.
     ## @return None.
     def _abrir_recuperacion(self):
@@ -272,7 +258,6 @@ class MainMenuScene(BaseScene):
         identifier = self.fields[0].texto.strip()
         self._set_page("recovery_request")
         self.fields[0].texto = identifier
-
     ## @brief Envía una solicitud de recuperación y muestra una respuesta genérica.
     ## @return None.
     def _solicitar_recuperacion(self):
@@ -289,7 +274,6 @@ class MainMenuScene(BaseScene):
             "Si la cuenta existe, recibirás un enlace por correo. "
             "Ábrelo para definir una contraseña nueva."
         )
-
     ## @brief US-02: solicita reenviar la verificación del correo.
     ## @return None.
     def _reenviar_verificacion(self):
@@ -304,7 +288,6 @@ class MainMenuScene(BaseScene):
             "Si la cuenta existe y aún no está verificada, se enviará un enlace. "
             "Revisa también la carpeta de spam."
         )
-
     ## @brief US-04: consulta los datos actuales y prepara el perfil del jugador.
     ## @return None.
     def _abrir_perfil(self):
@@ -322,13 +305,11 @@ class MainMenuScene(BaseScene):
             self.profile_avatar = None
             self.profile_avatar_label = "Avatar no disponible"
             self.status = f"No se pudo cargar el avatar del perfil: {error}"
-
     ## @brief US-04 y US-06: prepara el retrato elegido, con respaldo predeterminado.
     def _crear_avatar_perfil(self):
         eleccion = self.current_user.get("avatar_selection")
         if not isinstance(eleccion, dict):
             eleccion = {"tipo": "predeterminado", "valor": "avatar_1"}
-
         tipo = eleccion.get("tipo")
         valor = eleccion.get("valor")
         if (
@@ -352,17 +333,14 @@ class MainMenuScene(BaseScene):
             personajes.imagen("avatar_1", 72, "retratos"),
             NOMBRES_PERSONAJES["avatar_1"],
         )
-
     ## @brief US-06 y US-09–US-11: abre el flujo online de avatar, sala y arena.
     ## @return None. Si ocurre un error de conexión, lo muestra en el menú.
     def _abrir_juego(self):
         from .online import JuegoOnlineScene
-
         try:
             self.window.set_scene(JuegoOnlineScene(self.font, self.user_name))
         except (OSError, RuntimeError, ValueError) as error:
             self.status = str(error)
-
     ## @brief Borra el estado de sesión y regresa a la bienvenida.
     ## @return None.
     def _cerrar_sesion(self):
@@ -372,7 +350,6 @@ class MainMenuScene(BaseScene):
         self.user_name = ""
         self.failed_attempts = 0
         self._set_page("welcome")
-
     ## @brief US-04 y US-28: prepara estadísticas, logros e historial del perfil.
     ## @return Lista de líneas que se dibujarán dentro del área desplazable.
     def _profile_lines(self):
@@ -419,7 +396,6 @@ class MainMenuScene(BaseScene):
         else:
             lines.append("Aún no hay partidas registradas.")
         return lines
-
     ## @brief Distribuye eventos a campos, botones y navegación por teclado/rueda.
     ## @param event Evento recibido por la ventana de Pygame.
     ## @return None.
@@ -445,7 +421,6 @@ class MainMenuScene(BaseScene):
                 self._iniciar_sesion()
             elif self.page == "recovery_request":
                 self._solicitar_recuperacion()
-
     ## @brief El bucle de Pygame comprueba en cada fotograma si el jugador canceló o si ya llegó un resultado del navegador.
     ## @details Solo llama a _finalizar_sesion_google cuando el Future está listo, para que la ventana siga respondiendo.
     ## @param mouse_pos Posición actual del cursor.
@@ -460,7 +435,6 @@ class MainMenuScene(BaseScene):
             self.status = "Acceso con Google cancelado."
         elif intento.resultado.done():
             self._finalizar_sesion_google(intento)
-
     ## @brief Dibuja una línea de texto alineada al centro de la superficie.
     ## @param surface Superficie de destino.
     ## @param text Texto que se va a renderizar.
@@ -472,7 +446,6 @@ class MainMenuScene(BaseScene):
         # Renderiza el texto y calcula su rectángulo centrado en la pantalla.
         rendered = (font or self.title_font).render(text, True, color)
         surface.blit(rendered, rendered.get_rect(center=(surface.get_width() // 2, y)))
-
     ## @brief Ajusta el mensaje al ancho permitido y centra sus líneas.
     ## @param surface Superficie donde se dibuja el mensaje.
     ## @param text Mensaje largo que se debe distribuir.
@@ -501,7 +474,6 @@ class MainMenuScene(BaseScene):
             self._draw_centered(
                 surface, line, first_y + index * line_height, font, color
             )
-
     ## @brief US-04 y US-28: dibuja identidad, avatar y datos históricos del perfil.
     ## @param surface Superficie donde se dibuja el perfil.
     ## @return None.
@@ -536,7 +508,6 @@ class MainMenuScene(BaseScene):
         self._draw_centered(
             surface, f"Puntuación máxima: {record}", 263, self.font
         )
-
         # Limita estadísticas e historial a una ventana gráfica desplazable.
         viewport = pygame.Rect(80, 285, 740, 230)
         surface.set_clip(viewport)
@@ -549,7 +520,6 @@ class MainMenuScene(BaseScene):
             rendered = self.detail_font.render(line, True, color)
             surface.blit(rendered, (viewport.x + 12, viewport.y + 8 + index * 20))
         surface.set_clip(None)
-
     ## @brief Dibuja el avatar temporal con las iniciales del usuario.
     ## @param surface Superficie donde se dibuja el avatar.
     ## @param name Nombre usado para obtener iniciales.
@@ -563,7 +533,6 @@ class MainMenuScene(BaseScene):
         initials = "".join(part[0] for part in name.split() if part)[:2].upper()
         rendered = self.title_font.render(initials, True, TEXTO)
         surface.blit(rendered, rendered.get_rect(center=center))
-
     ## @brief Dibuja el fondo, contenido de la página y controles activos.
     ## @param surface Superficie entregada por el ciclo de la ventana.
     ## @return None.
@@ -617,7 +586,6 @@ class MainMenuScene(BaseScene):
             self._draw_profile(surface)
         elif self.page == "ranking":
             self._draw_ranking(surface)
-
         # Dibuja los campos y botones que se configuraron para esta pantalla.
         for field in self.fields:
             field.draw(surface, self.font, self.small_font)

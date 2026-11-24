@@ -44,20 +44,18 @@ class MapaArena:
         _reactor (List[Tuple[int, int]]): coordenadas (columna, fila) de las casillas del
             reactor.
     """
-
     ## @brief US-07 y US-23: convierte filas de texto en una cuadrícula de casillas.
     def __init__(self, nombre: str, plano: Tuple[str, ...]):
         """
         Descripción:
             Lee el plano carácter por carácter y construye la cuadrícula.
-
             Pasos:
             1. Si el carácter es un dígito, lo registra como punto de inicio de ese jugador
-               (la posición se guarda por su número) y coloca una casilla INICIO.
+            (la posición se guarda por su número) y coloca una casilla INICIO.
             2. Cualquier otro carácter se convierte en su Casilla; un carácter que no esté
-               definido en Casilla provoca un ValueError.
+            definido en Casilla provoca un ValueError.
             3. Ordena los puntos de inicio por su número, de modo que el índice 0 sea el del
-               jugador 1.
+            jugador 1.
             4. Recoge las coordenadas de todas las casillas del reactor.
         Entradas:
             nombre (str): nombre del escenario.
@@ -79,7 +77,7 @@ class MapaArena:
             self._casillas.append(linea)
         self._inicios = [inicios[k] for k in sorted(inicios)]
         self._reactor = [(c, f) for f in range(self.filas) for c in range(self.columnas)
-                         if self._casillas[f][c] is Casilla.REACTOR]
+                        if self._casillas[f][c] is Casilla.REACTOR]
 
     @property
     ## @brief Devuelve el número de columnas del mapa.
@@ -93,7 +91,6 @@ class MapaArena:
             int: número de columnas.
         """
         return len(self._casillas[0])
-
     @property
     ## @brief Devuelve el número de filas del mapa.
     def filas(self) -> int:
@@ -106,7 +103,6 @@ class MapaArena:
             int: número de filas.
         """
         return len(self._casillas)
-
     ## @brief US-11 y US-23: obtiene el tipo de casilla en una coordenada.
     def casilla_en(self, columna: int, fila: int) -> Casilla:
         """
@@ -121,7 +117,6 @@ class MapaArena:
             Casilla: el tipo de casilla en esa posición.
         """
         return self._casillas[fila][columna]
-
     ## @brief US-11 y US-20: valida que una coordenada sea caminable.
     def es_transitable(self, columna: int, fila: int) -> bool:
         """
@@ -138,7 +133,6 @@ class MapaArena:
         """
         return (0 <= columna < self.columnas and 0 <= fila < self.filas
                 and self._casillas[fila][columna] in CASILLAS_TRANSITABLES)
-
     ## @brief US-09: devuelve las coordenadas asignables al inicio de cada jugador.
     def puntos_inicio(self) -> List[Tuple[int, int]]:
         """
@@ -152,7 +146,6 @@ class MapaArena:
             List[Tuple[int, int]]: lista de (columna, fila), uno por jugador posible.
         """
         return list(self._inicios)
-
     ## @brief US-18–US-19: calcula el centro geométrico del reactor.
     def centro_reactor(self) -> Tuple[float, float]:
         """

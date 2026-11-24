@@ -685,7 +685,7 @@ def unirse_partida_juego(claims):
             estado["partida"] = partida
         if _GAME_ARENA is not None:
             player = next((p for p in _GAME_ARENA.snapshot()["players"]
-                           if p["player_id"] == player_id), None)
+                        if p["player_id"] == player_id), None)
             if player and player["connected"]:
                 return {"ok": True}
             if player:
@@ -855,7 +855,7 @@ def mover_jugador_juego(claims):
         elif not _MAPA_ACTIVO.es_transitable(x, y):
             return {"ok": False, "error": "No puedes atravesar esa barrera.", "state": _estado_arena()}
         if any(p["player_id"] != player_id and p["x"] == x and p["y"] == y
-               for p in estado["players"]):
+            for p in estado["players"]):
             return {"ok": False, "error": "Otro jugador ocupa esa casilla.", "state": _estado_arena()}
         if _GAME_GUARDIANES is not None and (x, y) in _GAME_GUARDIANES.posiciones():
             return {"ok": False, "error": "Un guardián ocupa esa casilla.", "state": _estado_arena()}
@@ -873,7 +873,7 @@ def mover_jugador_juego(claims):
         if _GAME_EVENTOS is not None:
             jugador_actual = next(
                 (p for p in _GAME_ARENA.snapshot()["players"]
-                 if p["player_id"] == player_id), None
+                if p["player_id"] == player_id), None
             )
             if jugador_actual is not None:
                 puntos_extra = _GAME_EVENTOS.recoger_energia(jugador_actual, ahora)

@@ -42,7 +42,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
   let ocupado = false;
   let intentos = 0;
   let nombrePendiente = "";
-
   // Se ejecuta al empezar o terminar una acción. Mientras ocupado sea true bloquea todos los botones de acceso y el de salir.
   // Cuando queda libre el panel, los botones data-remoto siguen esperando a que auth esté listo.
   /** @brief US-01–US-05 y US-29–US-30: habilita controles según la conexión y acción pendiente. */
@@ -52,7 +51,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     }
     salir.disabled = ocupado;
   }
-
   // Al abrir un formulario o reintentar, descarga los módulos de Firebase. carga guarda la promesa compartida
   // para evitar otra descarga si se cambia de pantalla mientras llega la primera. Al terminar vuelve a evaluar los controles.
   /** @brief US-01–US-05 y US-29–US-30: carga Firebase Auth de forma diferida. */
@@ -87,7 +85,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
       controles();
     }
   }
-
   // Recibe el id de la sección de destino y un mensaje opcional. Oculta las demás secciones y mueve el foco al título
   // para que el teclado y el lector de pantalla sigan la navegación. Solo los formularios que usan Firebase inician la conexión.
   /** @brief US-01–US-05 y US-29–US-30: muestra una pantalla de acceso y gestiona su foco. */
@@ -99,7 +96,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     elemento(destino).querySelector("h2").focus();
     if (["acceso", "registro", "recuperacion"].includes(destino) && !auth) conectar();
   }
-
   // Recibe una función, la ejecuta una sola vez mientras los botones están bloqueados y espera su resultado con await.
   // Si falla, escribe en el panel visible. finally vuelve a habilitar los controles tanto en caso de éxito como de error.
   /** @brief US-01–US-05 y US-29–US-30: ejecuta una acción de formulario sin duplicar envíos. */
@@ -118,7 +114,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
       controles();
     }
   }
-
   for (const boton of panel.querySelectorAll("[data-vista]")) {
     // Cada botón lee el destino de su atributo data-vista. Al abrir recuperación copia el identificador que ya se escribió.
     // Abandonar la verificación cierra la sesión provisional y borra el nombre pendiente antes de mostrar otro formulario.
@@ -136,7 +131,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
   }
   // El botón de reintento vuelve a cargar la conexión con Firebase tras un fallo.
   reintentar.addEventListener("click", conectar);
-
   // Al preparar la página, asocia cada id de formulario con la función que procesa sus datos. La misma conexión sirve
   // tanto al botón de enviar como a la tecla Intro, ya que ambos generan el evento submit.
   /** @brief US-01–US-05 y US-29–US-30: conecta el envío de un formulario con su caso de uso. */
@@ -147,7 +141,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
       if (auth) ejecutar(accion);
     });
   }
-
   // Login y recuperación aceptan usuario o correo. Para un nombre consulta /api/correo y URLSearchParams lo codifica para la URL.
   // El formulario que llamó a la función decide qué mostrar si la búsqueda no trae correo.
   /** @brief US-03 y US-30: convierte nombre de usuario o correo en la dirección para autenticación. */
@@ -157,7 +150,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     if (valor.includes("@")) return valor;
     return (await pedir("/api/correo?" + new URLSearchParams({ nombre: valor }))).correo;
   }
-
   // El formulario de contraseña llama a esta función tras un identificador desconocido o credenciales rechazadas.
   // Al tercer fallo reinicia el contador y pasa el identificador a recuperación para que el jugador no tenga que repetirlo.
   /** @brief US-03 y US-30: cuenta fallos de acceso y ofrece recuperación tras tres intentos. */
@@ -171,7 +163,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     elemento("cuenta-recuperacion").value = elemento("identificador").value;
     mostrar("recuperacion", "Fallaste tres veces. Puedes solicitar un enlace para recuperar tu contraseña.");
   }
-
   // Recibe el usuario devuelto por Firebase y, para Google, la señal que permite crear un perfil en el primer ingreso.
   /** @brief US-04, US-29 y US-30: abre el perfil del jugador tras autenticarlo. */
   async function entrarAlJuego(usuario, google = false) {
@@ -191,7 +182,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     salir.hidden = false;
     salir.focus();
   }
-
   // Al enviar usuario o correo, Firebase comprueba la contraseña. Un correo pendiente lleva a verificación para poder reenviar el enlace.
   // Un usuario verificado pasa a su perfil. La contraseña se borra en todos los casos al terminar.
   alEnviar("formulario", async () => {
@@ -212,7 +202,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
       elemento("contrasena").value = "";
     }
   });
-
   // El clic abre el selector de cuentas de Google desde el navegador. Con correo verificado, user pasa a entrarAlJuego junto con true
   // para que el servidor pueda dar de alta el perfil en el primer acceso. Si falta verificación se cierra la sesión provisional.
   elemento("google").addEventListener("click", () => ejecutar(async () => {
@@ -226,7 +215,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     }
     await entrarAlJuego(user, true);
   }));
-
   // Registro y reintentos de alta validan el nombre antes de enviarlo. Array.from cuenta puntos de código de Unicode
   // y el signo @ se reserva para distinguir los correos de los nombres de jugador en el formulario de acceso.
   /** @brief US-01 y US-30: valida el nombre de usuario antes de crear el perfil. */
@@ -235,7 +223,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
       throw new Error("Elige un nombre de 1 a 40 caracteres sin @.");
     }
   }
-
   // Sirve al primer registro y al reenvío. Con un nombre pendiente, actualiza el nombre visible en Firebase y guarda el perfil
   // en el juego con el token del mismo usuario. Solo tras un guardado correcto pide enviar el enlace de verificación.
   /** @brief US-02 y US-30: guarda el perfil pendiente y solicita el correo de verificación. */
@@ -268,7 +255,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     await sdk.sendEmailVerification(usuario);
     estado.textContent = "Enlace enviado. Revisa tu correo y la carpeta de spam. Una vez verificado, vuelve a iniciar sesión.";
   }
-
   // Antes de crear la cuenta, comprueba el nombre, las reglas de contraseña, su confirmación y la disponibilidad del nombre en la API.
   // Una vez que Firebase acepta el correo, conserva el nombre propuesto para guardar el perfil y enviar la verificación.
   alEnviar("form-registro", async () => {
@@ -291,7 +277,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
   });
   // Permite reenviar la verificación o completar el nombre pendiente desde la misma cuenta.
   alEnviar("form-verificacion", enviarVerificacion);
-
   // Busca el correo y pide a Firebase el enlace de restablecimiento si lo encuentra. Una cuenta ausente recibe la misma pantalla
   // de confirmación para que el formulario no revele qué cuentas existen. Los demás fallos vuelven al panel de errores.
   alEnviar("form-recuperacion", async () => {
@@ -305,7 +290,6 @@ export function iniciarAccesoMovil({ pedir, abrirCuenta, salirDePartida, cerrarC
     }
     mostrar("recuperacion-enviada");
   });
-
   // Primero intenta liberar la plaza mientras la cuenta aún tiene un token válido. Luego cierra Firebase, borra los datos locales
   // y regresa a la bienvenida. Si no pudo confirmar la salida de la sala, la despedida lo indica al jugador.
   salir.addEventListener("click", () => ejecutar(async () => {

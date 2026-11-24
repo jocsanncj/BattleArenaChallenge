@@ -24,7 +24,7 @@ class GestorEventosPartida:
 
     ## @brief US-22: inicializa los eventos temporizados y sus dependencias de arena.
     def __init__(self, mapa, obstaculos, guardianes, reloj: Callable[[], float] = time.monotonic,
-                 semilla=None):
+                semilla=None):
         self.mapa = mapa
         self.obstaculos = obstaculos
         self.guardianes = guardianes
@@ -45,7 +45,6 @@ class GestorEventosPartida:
         self._n_energia = 0
         self._n_sobrecarga = 0
         self._finalizado = False
-
     ## @brief US-22: identifica el tipo de evento a partir de su identificador.
     @staticmethod
     def _tipo(identificador):
@@ -57,11 +56,9 @@ class GestorEventosPartida:
             if identificador.startswith(base):
                 return base
         return identificador
-
     ## @brief US-22: programa la primera ronda según modo y duración de partida.
     def iniciar(self, ahora, duracion_partida, modo="tiempo"):
         """Programa la primera ronda de eventos.
-
         ``modo`` es ``"tiempo"`` (la partida dura ``duracion_partida`` segundos)
         o ``"puntos"`` (termina al alcanzar el objetivo; duración desconocida).
         """
@@ -77,7 +74,6 @@ class GestorEventosPartida:
             self._fin_partida = None
             horizonte = self.HORIZONTE_RONDA_PUNTOS
         self._programar_ronda(self.iniciado_en, horizonte)
-
     ## @brief US-22: distribuye energías, sobrecargas y eventos en una ronda.
     def _programar_ronda(self, inicio, horizonte):
         """Añade una ronda completa que cumple la US-22: tres energías en momentos
@@ -86,24 +82,22 @@ class GestorEventosPartida:
         sufijo = "" if self._ronda == 1 else f"_r{self._ronda}"
         horizonte = max(self.MIN_HORIZONTE_RONDA, float(horizonte))
         margen = min(12.0, horizonte * 0.08)
-
         ## @brief Mantiene el inicio y fin de cada evento dentro del horizonte de ronda.
         def ubicar(instante, duracion):
             # Dentro de la ronda y terminando antes de que ella acabe.
             return min(max(margen, instante), max(margen, horizonte - duracion - 1))
-
         definiciones = []
         # Las tres energías quedan separadas: cada una puede recogerse antes de la siguiente.
         for proporcion in (0.06, 0.45, 0.78):
             self._n_energia += 1
             variacion = self.aleatorio.uniform(-0.025, 0.025) * horizonte
             definiciones.append((ubicar(horizonte * proporcion + variacion, self.DURACION_ENERGIA),
-                                 f"energia_{self._n_energia}", self.DURACION_ENERGIA))
+                                f"energia_{self._n_energia}", self.DURACION_ENERGIA))
         for minimo, maximo in ((0.20, 0.38), (0.65, 0.84)):
             self._n_sobrecarga += 1
             definiciones.append((ubicar(self.aleatorio.uniform(horizonte * minimo, horizonte * maximo),
                                         self.DURACION_SOBRECARGA),
-                                 f"sobrecarga_{self._n_sobrecarga}", self.DURACION_SOBRECARGA))
+                                f"sobrecarga_{self._n_sobrecarga}", self.DURACION_SOBRECARGA))
         for (minimo, maximo), nombre, duracion in (
             ((0.25, 0.55), "guardianes_adicionales", self.DURACION_GUARDIANES),
             ((0.45, 0.72), "guardianes_quitan_puntos", self.DURACION_EVENTO_CREATIVO),
@@ -113,11 +107,10 @@ class GestorEventosPartida:
                                         duracion), nombre + sufijo, duracion))
         self.programados.extend(
             {"id": nombre, "nombre": nombre, "inicia_en": inicio + instante,
-             "duracion": duracion, "activado": False}
+            "duracion": duracion, "activado": False}
             for instante, nombre, duracion in sorted(definiciones)
         )
         self._fin_ronda = inicio + horizonte
-
     ## @brief US-16 y US-22: programa otra ronda mientras continúe activa la partida.
     def _programar_siguiente_ronda(self, ahora, prorroga):
         """Abre otra ronda cuando la anterior terminó, mientras la partida siga activa."""
@@ -135,14 +128,12 @@ class GestorEventosPartida:
                 return
             horizonte = min(self.HORIZONTE_RONDA_MAX, restante)
         self._programar_ronda(ahora, horizonte)
-
     ## @brief US-10 y US-22: pausa el reloj de eventos durante una desconexión.
     def pausar(self, ahora=None):
         """Detiene el reloj de eventos mientras la partida está pausada."""
         ahora = self.reloj() if ahora is None else float(ahora)
         if self.iniciado_en is not None and self._pausado_en is None:
             self._pausado_en = ahora
-
     ## @brief US-10 y US-22: desplaza vencimientos para conservar la duración restante.
     def reanudar(self, ahora=None):
         """Desplaza los vencimientos para conservar la duración restante de cada evento."""
@@ -161,7 +152,6 @@ class GestorEventosPartida:
         if self.energia is not None:
             self.energia["termina_en"] += desplazamiento
         self._pausado_en = None
-
     ## @brief US-22: activa eventos programados, termina los vencidos y publica estado.
     def actualizar(self, jugadores, ahora=None, prorroga=False):
         ahora = self.reloj() if ahora is None else float(ahora)
@@ -179,7 +169,6 @@ class GestorEventosPartida:
             if ahora >= evento["termina_en"]:
                 self._finalizar(identificador, evento)
         return self.estado_publico(ahora)
-
     ## @brief US-22: aplica los efectos asociados al tipo de evento que inicia.
     def _activar(self, programado, jugadores, ahora):
         identificador = programado["id"]
@@ -222,7 +211,6 @@ class GestorEventosPartida:
             )
             evento["mensaje"] = "¡Doble de trampas! La arena tiene el doble de trampas."
         self.activos[identificador] = evento
-
     ## @brief US-22: busca una casilla segura para la energía adicional.
     def _ubicacion_energia(self, jugadores):
         ocupadas = {(int(j["x"]), int(j["y"])) for j in jugadores}
@@ -234,10 +222,9 @@ class GestorEventosPartida:
                         for x in range(self.mapa.columnas)
                         if self.mapa.casilla_en(x, y).value == "R")
         candidatas = [(x, y) for y in range(1, self.mapa.filas - 1)
-                      for x in range(1, self.mapa.columnas - 1)
-                      if self.mapa.es_transitable(x, y) and (x, y) not in ocupadas]
+                    for x in range(1, self.mapa.columnas - 1)
+                    if self.mapa.es_transitable(x, y) and (x, y) not in ocupadas]
         return self.aleatorio.choice(candidatas) if candidatas else None
-
     ## @brief US-22: entrega una sola vez los puntos de energía al jugador que la recoge.
     def recoger_energia(self, jugador, ahora=None):
         """El primer jugador que ocupa la casilla recoge la energía una sola vez."""
@@ -251,7 +238,6 @@ class GestorEventosPartida:
         self.energia = None
         self.activos.pop(identificador, None)
         return puntos
-
     ## @brief US-18–US-19 y US-22: indica si una sobrecarga está bloqueando el reactor.
     def sobrecarga_activa(self, ahora=None):
         ahora = self.reloj() if ahora is None else float(ahora)
@@ -259,7 +245,6 @@ class GestorEventosPartida:
             nombre.startswith("sobrecarga_") and evento["termina_en"] > ahora
             for nombre, evento in self.activos.items()
         )
-
     ## @brief US-21–US-22: indica si los guardianes deben drenar puntos.
     def drenaje_activo(self, ahora=None):
         ahora = self.reloj() if ahora is None else float(ahora)
@@ -267,10 +252,9 @@ class GestorEventosPartida:
             self._tipo(identificador) == "guardianes_quitan_puntos" and evento["termina_en"] > ahora
             for identificador, evento in self.activos.items()
         )
-
     ## @brief US-21–US-22: resta un punto ante un nuevo impacto durante el drenaje.
     def penalizar_por_guardian(self, jugador_id, estado_anterior, estado_actual,
-                               marcador, ahora=None):
+                            marcador, ahora=None):
         """Resta un punto si un guardián alcanza al jugador durante el evento de drenaje."""
         if not self.drenaje_activo(ahora):
             return False
@@ -282,7 +266,6 @@ class GestorEventosPartida:
             return False
         marcador.remove_points(jugador_id, 1)
         return True
-
     ## @brief US-22: revierte los efectos temporales de un evento.
     def _finalizar(self, identificador, evento):
         tipo = self._tipo(identificador)
@@ -296,7 +279,6 @@ class GestorEventosPartida:
             if self.energia["id"] == identificador:
                 self.energia = None
         self.activos.pop(identificador, None)
-
     ## @brief US-22 y US-30: prepara los eventos activos y próximos para los clientes.
     def estado_publico(self, ahora=None):
         ahora = self.reloj() if ahora is None else float(ahora)
@@ -330,7 +312,6 @@ class GestorEventosPartida:
             },
             "reactor_sobrecargado": self.sobrecarga_activa(ahora),
         }
-
     ## @brief US-22: cancela eventos pendientes y limpia los efectos de la partida.
     def finalizar(self):
         """Cancela los efectos temporales al finalizar la partida."""

@@ -43,7 +43,6 @@ class Scoreboard:
             raise ValueError("Los puntos deben ser un entero no negativo.")
         self._scores[player_id] += points
         return self._scores[player_id]
-
     ## @brief US-21–US-22: aplica una penalización sin permitir puntajes negativos.
     def remove_points(self, player_id: str, points: int = 1) -> int:
         """Resta puntos sin permitir que el marcador quede por debajo de cero."""
@@ -54,13 +53,11 @@ class Scoreboard:
             raise ValueError("Los puntos deben ser un entero no negativo.")
         self._scores[player_id] = max(0, self._scores[player_id] - points)
         return self._scores[player_id]
-
     ## @brief US-13 y US-15: devuelve una copia del marcador para sincronizar clientes.
     def scores(self) -> dict[str, int]:
         """
         Devuelve una copia para evitar que quien llama modifique accidentalmente los puntos internos.
         """
-        # Requiere US10/US13: transmitir estos puntos confirmados a todos los jugadores y actualizar la interfaz.
         return dict(self._scores)
     ## @brief US-15: pone a cero los puntos antes de una nueva partida.
     def reset(self) -> None:

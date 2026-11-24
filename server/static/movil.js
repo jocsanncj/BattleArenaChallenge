@@ -100,7 +100,6 @@ function renderPerfil(perfil) {
     return elemento;
   });
   document.querySelector("#logros").replaceChildren(...elementosLogros);
-
   const historial = perfil.match_history || [];
   document.querySelector("#estado-historial").textContent = historial.length ? "" : "Aún no tienes partidas registradas.";
   // Reutiliza fila para convertir cada partida en una entrada del historial. Si el servidor omite el rival, muestra solo el resultado.
@@ -259,13 +258,11 @@ const editorConfiguracion = prepararConfiguracion({
 async function cargarEstadoPartida(forzar = false) {
   const jugador = jugadorActivo;
   const estado = document.querySelector("#estado-partida");
-
   const boton = document.querySelector("#actualizar-partida");
   if (!jugador || operacionSala || (consultaActual && !forzar)) return;
   const consulta = Symbol();
   consultaActual = consulta;
   boton.disabled = true;
-
   try {
     const token = await jugador.getIdToken();
     // US30 consulta el estado compartido de US13. «partida» incluye la sala
@@ -274,7 +271,6 @@ async function cargarEstadoPartida(forzar = false) {
     const datos = await pedir(ruta, {
       headers: { Authorization: `Bearer ${token}` },
     });
-
     if (jugador !== jugadorActivo || consultaActual !== consulta) return;
     datosPartida = datos;
     const { game, mapa, partida, jugador_actual_id, avatares_sala } = datos;
@@ -501,7 +497,6 @@ async function cambiarSala(accion) {
       method: "POST",
       headers,
     });
-
     if (jugador !== jugadorActivo) return;
     if (accion === "leave") partidaSeguida = null;
     const mensajes = {
@@ -509,7 +504,6 @@ async function cambiarSala(accion) {
       leave: "Saliste de la sala.",
       start: "Partida iniciada.",
     };
-
     avisoSala.textContent = mensajes[accion];
   } catch (error) {
     if (jugador === jugadorActivo) {
@@ -552,7 +546,6 @@ async function moverJugador(direccion) {
       },
       body: JSON.stringify({ direction: direccion }),
     });
-
     if (jugador !== jugadorActivo) return;
     avisoMovimiento.textContent = resultado.ok
       ? ""
@@ -585,16 +578,13 @@ async function cambiarExtraccion(accion) {
   // y publica los puntos de US19 en el siguiente estado del marcador.
   const jugador = jugadorActivo;
   if (!jugador || extraerEnergia.disabled) return;
-
   // US18 usa el mismo event_id para reconocer un inicio repetido y para cancelar esa extracción concreta.
   const intento = accion === "start"
     ? { jugador, id: crypto.getRandomValues(new Uint32Array(4)).join("-") }
     : extraccion;
-
   if (intento?.jugador !== jugador) return;
   extraerEnergia.disabled = true;
   cancelarExtraccion.disabled = true;
-
   try {
     const token = await jugador.getIdToken();
     if (jugador !== jugadorActivo) return;
@@ -606,7 +596,6 @@ async function cambiarExtraccion(accion) {
       },
       body: JSON.stringify({ action: accion, event_id: intento.id }),
     });
-
     if (jugador !== jugadorActivo) return;
     extraccion = accion === "start" ? intento : undefined;
     avisoReactor.textContent = accion === "start"
@@ -637,7 +626,6 @@ function mostrarEstadoReactor(juego) {
   const estado = document.querySelector("#estado-reactor");
   const reactor = juego?.reactor;
   let mensaje = "Reactor: sin partida activa.";
-
   if (juego?.active && !juego.paused && reactor) {
     const segundos = Math.ceil(reactor.remaining_seconds);
     const mensajes = {
@@ -648,7 +636,6 @@ function mostrarEstadoReactor(juego) {
     };
     mensaje = mensajes[reactor.status] ?? mensaje;
   }
-
   if (estado.textContent !== mensaje) estado.textContent = mensaje;
 }
 

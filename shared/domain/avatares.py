@@ -25,7 +25,6 @@ class AvatarPredeterminado:
         forma (str): figura blanca del centro: 'circulo', 'cuadrado', 'triangulo',
             'rombo' o 'cruz'.
     """
-
     id: str
     nombre: str
     color: Tuple[int, int, int]
@@ -56,7 +55,6 @@ class ServicioAvatar:
         _predeterminados (Dict[str, AvatarPredeterminado]): catálogo indexado por id,
             para buscar un avatar rápidamente.
     """
-
     ## @brief US-06: conecta el servicio de selección con el repositorio de avatares.
     def __init__(self, repositorio: RepositorioAvatares):
         """
@@ -72,7 +70,6 @@ class ServicioAvatar:
         self._predeterminados: Dict[str, AvatarPredeterminado] = {
             a.id: a for a in AVATARES_PREDETERMINADOS
         }
-
     ## @brief US-06: devuelve el catálogo de avatares predeterminados.
     def listar_predeterminados(self) -> List[AvatarPredeterminado]:
         """
@@ -85,7 +82,6 @@ class ServicioAvatar:
             List[AvatarPredeterminado]: los avatares del catálogo, en orden.
         """
         return list(AVATARES_PREDETERMINADOS)
-
     ## @brief US-06: obtiene el avatar elegido o asigna el primero como valor inicial.
     def obtener_eleccion(self, id_usuario: int) -> EleccionAvatar:
         """
@@ -101,22 +97,20 @@ class ServicioAvatar:
         return self._repo.obtener(id_usuario) or EleccionAvatar(
             "predeterminado", AVATARES_PREDETERMINADOS[0].id
         )
-
     ## @brief US-06: carga o dibuja la imagen del avatar lista para Pygame.
     def obtener_superficie(self, id_usuario: int, tam: int = 64) -> pygame.Surface:
         """
         Descripción:
             Construye la imagen del avatar de un jugador, lista para dibujar con pygame en
             cualquier ventana. La imagen se arma de nuevo cada vez a partir de lo guardado.
-
             Pasos:
             1. Obtiene la elección del jugador.
             2. Si es personalizada, decodifica el texto base64, lo carga como imagen en
-               memoria y la recorta a cuadrado con el tamaño pedido.
+            memoria y la recorta a cuadrado con el tamaño pedido.
             3. Si la imagen está dañada (base64 inválido o formato no reconocido), no se
-               detiene: cae al camino de los avatares predeterminados.
+            detiene: cae al camino de los avatares predeterminados.
             4. Si es predeterminada (o hubo fallo), busca el avatar en el catálogo, usando
-               el primero si el id no existe, y lo dibuja por código.
+            el primero si el id no existe, y lo dibuja por código.
         Entradas:
             id_usuario (int): identificador del jugador.
             tam (int): lado en píxeles de la imagen cuadrada resultante. Por defecto 64.
@@ -134,7 +128,6 @@ class ServicioAvatar:
                 pass
         avatar = self._predeterminados.get(eleccion.valor, AVATARES_PREDETERMINADOS[0])
         return self.dibujar_predeterminado(avatar, tam)
-
     ## @brief US-06: valida y guarda una selección del catálogo.
     def seleccionar_predeterminado(self, id_usuario: int, id_avatar: str) -> None:
         """
@@ -150,22 +143,19 @@ class ServicioAvatar:
         if id_avatar not in self._predeterminados:
             raise ErrorApp("El avatar seleccionado no existe.")
         self._repo.guardar(id_usuario, EleccionAvatar("predeterminado", id_avatar))
-
     ## @brief US-06: valida, recorta y persiste una imagen personalizada como PNG base64.
     def subir_personalizado(self, id_usuario: int, ruta_origen: str) -> None:
         """
         Descripción:
             Permite que un jugador use una imagen de su computador como avatar. La imagen se
             guarda dentro del propio JSON como texto, no como archivo aparte.
-
             Pasos:
             1. Verifica que la ruta exista y sea un archivo; si no, lanza ErrorApp.
             2. Carga la imagen con pygame, la recorta a cuadrado y la reduce a 128 x 128
-               píxeles para que el JSON se mantenga liviano. Si no es una imagen válida, lanza
-
+            píxeles para que el JSON se mantenga liviano. Si no es una imagen válida, lanza
             ErrorApp con un mensaje claro.
             3. La convierte a PNG en memoria, la codifica en base64 y la guarda como avatar
-               de tipo 'personalizado'.
+            de tipo 'personalizado'.
         Entradas:
             id_usuario (int): identificador del jugador.
             ruta_origen (str): ruta de la imagen elegida en el disco.
@@ -188,7 +178,6 @@ class ServicioAvatar:
                 base64.b64encode(buffer.getvalue()).decode("ascii"),
             ),
         )
-
     ## @brief US-06: recorta una imagen centrada y la escala a un cuadrado.
     @staticmethod
     def _cuadrar(imagen: pygame.Surface, tam: int) -> pygame.Surface:
@@ -210,7 +199,6 @@ class ServicioAvatar:
         lado = min(ancho, alto)
         recorte = imagen.subsurface(((ancho - lado) // 2, (alto - lado) // 2, lado, lado)).copy()
         return pygame.transform.smoothscale(recorte, (tam, tam))
-
     ## @brief US-06: dibuja una figura del catálogo en una superficie Pygame.
     @staticmethod
     def dibujar_predeterminado(avatar: AvatarPredeterminado, tam: int) -> pygame.Surface:
@@ -224,7 +212,6 @@ class ServicioAvatar:
             - triangulo: triángulo apuntando hacia arriba.
             - rombo: rombo.
             - cruz: dos rectángulos cruzados.
-
             Si la forma no se reconoce, queda solo el círculo de color. Es un método estático
             porque no usa datos del objeto.
         Entradas:

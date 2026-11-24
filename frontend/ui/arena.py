@@ -54,7 +54,6 @@ class PantallaArena(Pantalla):
         self._recargando = (self._partida.estado_juego or {}).get("reactor", {}).get("status") == "recargando"
         self._aviso_hasta = 0
         self._imagenes = {}
-
         actions.iniciar()
         self.control_entrada = actions.ControlEntrada()
         self._ultimo_movimiento = -self.INTERVALO_MOVIMIENTO_MS
@@ -182,14 +181,12 @@ class PantallaArena(Pantalla):
         if confirmada:
             self._aviso_hasta = pygame.time.get_ticks() + 1800
             sonido_extraccion()
-
     ## @brief US-06: reutiliza imágenes de avatar ya cargadas durante el renderizado.
     def _avatar(self, user_id, tam, tipo="retratos"):
         clave = (user_id, tam, tipo)
         if clave not in self._imagenes:
             self._imagenes[clave] = personajes.de_usuario(self.ctx.avatares, user_id, tam, tipo)
         return self._imagenes[clave]
-
     def _dibujar_mapa(self, superficie: pygame.Surface) -> None:
         """
         Descripción:
@@ -219,7 +216,6 @@ class PantallaArena(Pantalla):
         segundos = juego.get("elapsed_seconds", 0)
         tema = self._tema(segundos)
         superficie.blit(v.tablero(m, tema, T), (0, 0))
-
         obstaculos = juego.get("obstaculos", {})
         for puerta in obstaculos.get("puertas", []):
             sprite = v.sprite_puerta(bool(puerta.get("abierta")), T - 2)
@@ -228,7 +224,6 @@ class PantallaArena(Pantalla):
             if trampa.get("activa", True):
                 sprite = v.sprite_trampa(trampa["tipo"], T - 2)
                 superficie.blit(sprite, (trampa["x"] * T + 1, trampa["y"] * T + 1))
-
         # US-22.1: energía adicional enviada por el servidor.
         energia = juego.get("energia_adicional")
         if energia:
@@ -248,14 +243,12 @@ class PantallaArena(Pantalla):
                 (centro_energia[0], centro_energia[1] - 6),
                 (centro_energia[0], centro_energia[1] + 6), 3,
             )
-
         # US-21: guardianes con silueta propia, ojos y dirección hacia su objetivo.
         # La posición procede siempre del servidor; no se simula persecución en el cliente.
         for guardian in juego.get("guardianes", []):
             gx, gy = int(guardian["x"]), int(guardian["y"])
             sprite = v.guardian(guardian["tipo"], T-3)
             superficie.blit(sprite, (gx*T+1, gy*T))
-
         cx, cy = m.centro_reactor()
         centro = (int((cx + 0.5) * T), int((cy + 0.5) * T))
         v.reactor(superficie, m, tema, T, segundos)
@@ -280,7 +273,6 @@ class PantallaArena(Pantalla):
         cfg = self._partida.configuracion
         indice = indice_mapa(cfg)
         return v.fase(indice, segundos) if getattr(cfg, "rotacion", False) else indice
-
     def _temporizador(self):
         """
         Descripción:
@@ -316,8 +308,6 @@ class PantallaArena(Pantalla):
         """Muestra sobre la arena los eventos que están afectando la partida."""
         eventos = juego.get("eventos", []) or []
         proximo_evento = juego.get("proximo_evento")
-
-
         nombres = {
             "guardianes_adicionales": "5 GUARDIANES ADICIONALES",
             "guardianes_quitan_puntos": "LOS GUARDIANES QUITAN PUNTOS",
@@ -348,7 +338,6 @@ class PantallaArena(Pantalla):
                 v.rotulo(superficie, f"ALERTA · {titulo} en {math.ceil(segundos)} s", (17,y+25),14,(255,221,139),True)
             else:
                 v.rotulo(superficie, f"Próximo evento en {math.ceil(segundos)} s", (12,y+26),13,v.MUTED)
-
     def dibujar(self, superficie) -> None:
         """
         Descripción:
@@ -417,7 +406,7 @@ class PantallaArena(Pantalla):
         tema = self._tema((juego or {}).get("elapsed_seconds", 0))
         luz = v.PALETAS[tema][-1]
         local = next((j for j in (juego or {}).get("players", [])
-                      if j["user_id"] == self.ctx.id_usuario), {})
+                    if j["user_id"] == self.ctx.id_usuario), {})
         superficie.blit(self._avatar(self.ctx.id_usuario, 66), (x, 10))
         v.rotulo(superficie, "TU JUGADOR", (x+75, 14), 11, luz, True)
         v.rotulo(superficie, self.ctx.nombre_usuario, (x+75, 30), 16, v.TEXT, True, 137)
@@ -438,7 +427,7 @@ class PantallaArena(Pantalla):
                 es_local = jugador["user_id"] == self.ctx.id_usuario
                 superficie.blit(self._avatar(jugador["user_id"], 26), (x, y))
                 v.rotulo(superficie, jugador["username"], (x+34, y+3), 14,
-                         luz if es_local else v.TEXT, es_local, self.ANCHO_PANEL-106)
+                        luz if es_local else v.TEXT, es_local, self.ANCHO_PANEL-106)
                 puntos = v.fuente(17, True).render(str(jugador["score"]), True, v.TEXT)
                 superficie.blit(puntos, puntos.get_rect(topright=(x0+self.ANCHO_PANEL-14,y)))
             jugador_local = next(
@@ -457,12 +446,12 @@ class PantallaArena(Pantalla):
                 )
                 pygame.draw.rect(superficie, (45, 55, 75), (x, 330, self.ANCHO_PANEL - 28, 48), border_radius=6)
                 self.texto(superficie, f"{estado_texto} · {restante:.1f} s",
-                           (x + 8, 336), self.fuente, color_estado)
+                        (x + 8, 336), self.fuente, color_estado)
             elif jugador_local and jugador_local.get("inmune"):
                 pygame.draw.rect(superficie, (45, 70, 55), (x, 330, self.ANCHO_PANEL - 28, 48), border_radius=6)
                 self.texto(superficie,
-                           f"INMUNE · {jugador_local.get('segundos_inmunidad', 0):.1f} s",
-                           (x + 8, 336), self.fuente, (140, 235, 160))
+                        f"INMUNE · {jugador_local.get('segundos_inmunidad', 0):.1f} s",
+                        (x + 8, 336), self.fuente, (140, 235, 160))
             if juego.get("status") == "finished":
                 self.texto(superficie, "ESC: volver al menú", (x, superficie.get_height() - 24))
             else:

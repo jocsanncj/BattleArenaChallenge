@@ -223,7 +223,6 @@ class SQLiteRepository:
                 "No se pudo guardar el resultado de la partida."
             ) from error
         return True
-
     ## @brief US-17 y US-28: consulta las marcas personales de una partida guardada.
     def obtener_marcas_partida(self, match_id):
         """Devuelve el récord personal consolidado para cada participante de una partida."""
@@ -244,15 +243,14 @@ class SQLiteRepository:
             }
             for fila in filas
         }
-
     ## @brief US-27: calcula posiciones por puntos acumulados, victorias y nombre.
     def _consultar_ranking(self):
         with closing(self._con()) as con:
             filas = con.execute(
                 """
                 SELECT j.uid, j.nombre,
-                       SUM(p.puntaje) AS puntos,
-                       SUM(CASE WHEN p.resultado = 'victoria' THEN 1 ELSE 0 END) AS victorias
+                    SUM(p.puntaje) AS puntos,
+                    SUM(CASE WHEN p.resultado = 'victoria' THEN 1 ELSE 0 END) AS victorias
                 FROM jugadores AS j
                 JOIN partidas AS p ON p.uid = j.uid
                 GROUP BY j.uid, j.nombre

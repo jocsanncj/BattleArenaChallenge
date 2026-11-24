@@ -84,7 +84,7 @@ def catalogo_arte_arena():
                 "nombre": mapa.nombre,
                 "centro": mapa.centro_reactor(),
                 "tableros": [url_for("arte_movil.imagen_tablero", escenario=i, tema=t)
-                             for t in range(len(PALETAS))],
+                            for t in range(len(PALETAS))],
             }
             for i, mapa in enumerate(MAPAS)
         ],
@@ -93,5 +93,5 @@ def catalogo_arte_arena():
                     for estado in ("abierta", "cerrada")},
         "trampas": {tipo: url_for("arte_movil.imagen_trampa", tipo=tipo) for tipo in TIPOS_TRAMPA},
         "guardianes": {tipo: url_for("arte_movil.imagen_guardian", tipo=tipo)
-                      for tipo in TIPOS_GUARDIAN},
+                    for tipo in TIPOS_GUARDIAN},
     }

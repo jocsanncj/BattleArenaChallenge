@@ -27,10 +27,9 @@ class GameRules:
 
     OVERTIME_SECONDS = 120
     _EPSILON = 1e-9
-
     ## @brief US-08 y US-16: configura el límite de tiempo o puntos y la prórroga.
     def __init__(self, mode: str = "time", duration_seconds: int = 60,
-                 target_score: int = 20, overtime_seconds: int = 120) -> None:
+                target_score: int = 20, overtime_seconds: int = 120) -> None:
         # Requiere US08: proporcionar el modo de finalización, el tiempo y el puntaje objetivo seleccionados al iniciar.
         # Si la interfaz de US08 recibe minutos, convertirlos primero a segundos mediante minutes * 60.
         if not isinstance(mode, str) or mode not in {"time", "points"}:
@@ -54,7 +53,6 @@ class GameRules:
         self._deadline: float | None = None
         self._last_scores: dict[str, int] = {}
         self._final_state: dict | None = None
-
     ## @brief US-09 y US-16: inicia el reloj de la partida una sola vez.
     def start(self, now: float) -> None:
         """
@@ -67,7 +65,6 @@ class GameRules:
         self.status = "running"
         self._last_now = float(now)
         self._deadline = float(self.duration_seconds) if self.mode == "time" else None
-
     ## @brief US-15–US-16: actualiza el reloj, evalúa el final y devuelve el estado.
     def update(self, scores: dict[str, int], now: float) -> dict:
         """
@@ -82,7 +79,6 @@ class GameRules:
         if not self.paused:
             self._evaluate(self._last_scores)
         return self._state()
-
     ## @brief US-10 y US-16: pausa el reloj cuando se desconecta un jugador.
     def pause(self, now: float) -> None:
         """
@@ -96,7 +92,6 @@ class GameRules:
         self._evaluate(self._last_scores)
         if self.status != "finished":
             self.paused = True
-
     ## @brief US-10 y US-16: reanuda el reloj tras reconectar al jugador.
     def resume(self, now: float) -> None:
         """
@@ -108,7 +103,6 @@ class GameRules:
         if self.status != "waiting" and self.paused:
             self.paused = False
             self._last_now = float(now)
-
     ## @brief US-15–US-16: valida que los puntajes sean enteros no negativos.
     @staticmethod
     def _validate_scores(scores: dict[str, int]) -> None:
@@ -119,7 +113,6 @@ class GameRules:
                 raise ValueError("Cada puntaje necesita un identificador de jugador válido.")
             if type(value) is not int or value < 0:
                 raise ValueError("Los puntajes deben ser enteros no negativos.")
-
     ## @brief US-16: valida que el reloj use valores finitos y monotónicos.
     def _validate_now(self, now: float) -> None:
         if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
@@ -127,14 +120,12 @@ class GameRules:
         if self._observed_now is not None and float(now) + self._EPSILON < self._observed_now:
             raise ValueError("El reloj debe ser monotónico.")
         self._observed_now = float(now)
-
     ## @brief US-16: acumula el tiempo activo sin contar pausas.
     def _advance_clock(self, now: float) -> None:
         self._validate_now(now)
         if self.status in {"running", "overtime"} and not self.paused:
             self._elapsed += max(0.0, float(now) - self._last_now)
         self._last_now = float(now)
-
     ## @brief US-16: determina ganador, empate o prórroga según la configuración.
     def _evaluate(self, scores: dict[str, int]) -> None:
         if self.status not in {"running", "overtime"} or len(scores) < 2:
@@ -156,7 +147,6 @@ class GameRules:
             self.status = "overtime"
             self.overtime_count = 1
             self._deadline = boundary + self.OVERTIME_SECONDS
-
         # Durante la prórroga solo se considera su reloj; alcanzar antes el puntaje objetivo no vuelve a finalizar la partida de inmediato.
         if self._elapsed + self._EPSILON < self._deadline:
             return
@@ -167,7 +157,6 @@ class GameRules:
         extra_rounds = int((self._elapsed - self._deadline + self._EPSILON) // self.OVERTIME_SECONDS) + 1
         self.overtime_count += extra_rounds
         self._deadline += extra_rounds * self.OVERTIME_SECONDS
-
     ## @brief US-16–US-17: fija el resultado final para que no vuelva a cambiar.
     def _finish(self, winner_id: str, boundary: float) -> None:
         self.status = "finished"
@@ -176,7 +165,6 @@ class GameRules:
         self._elapsed = boundary
         # Entregar a US17 para mostrar la ventana de victoria.
         self._final_state = self._state()
-
     ## @brief US-16–US-17: genera la representación pública del estado de reglas.
     def _state(self) -> dict:
         remaining = None
